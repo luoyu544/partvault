@@ -76,7 +76,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 
 **Windows**：`tools/supvan_print/SupvanPrintHelper.exe` 调用硕方官方 SDK 通过 USB HID 直连打印。SDK 的 DLL 与编译好的 exe 未纳入仓库，请从硕方官网获取后放入该目录，或用 `build.ps1` 重新编译。
 
-**Linux**：`tools/supvan_print/supvan-print-helper.rs` 是基于开源协议实现 [heeen/supvan-cups](https://github.com/heeen/supvan-cups)（MIT）的替代实现，接口与原 exe 完全一致。为对齐官方 SDK 的打印清晰度，标签按打印头原生 384 点宽度绘制、以阈值二值化代替抖动、并把打印速度固定为 SDK 的 40（详见 `tools/supvan_print/README-linux.md` 与 `supvan-proto-print-at-speed.patch`）。编译后通过环境变量指向它：
+**Linux**：`tools/supvan_print/supvan-print-helper.rs` 是基于开源协议实现 [heeen/supvan-cups](https://github.com/heeen/supvan-cups)（MIT）的替代实现，接口与原 exe 完全一致。为对齐官方 SDK 的打印清晰度，helper 复用 SDK 的半色调算法（16 级量化 + 厂商误差扩散）、把 50mm 版面适配到 384 点打印头、并把打印速度固定为 SDK 的 40（详见 `tools/supvan_print/README-linux.md` 与 `supvan-proto-print-at-speed.patch`）。编译后通过环境变量指向它：
 
 ```bash
 SUPVAN_PRINT_HELPER=/path/to/supvan-print-helper

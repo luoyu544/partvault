@@ -17,7 +17,7 @@ import threading
 from pathlib import Path
 
 from ..db import BASE_DIR
-from .label_layout import location_layout, part_layout, render_png_for_print
+from .label_layout import location_layout, part_layout, render_png
 
 HELPER = Path(
     os.environ.get(
@@ -27,9 +27,9 @@ HELPER = Path(
 ).expanduser()
 DEFAULT_DEVICE = os.environ.get("SUPVAN_PRINTER_DEVICE", "").strip()
 
-# 50x30mm, 203dpi, die-cut gap paper.  The label is drawn straight at the
-# print head's 384-dot width (T50 = 48 mm) so no bitmap resampling happens
-# between the layout and the printer; the C#/Linux helper forwards that PNG.
+# 50x30mm, 203dpi, die-cut gap paper.  The layout is rendered to a 400x240 PNG
+# (8 px/mm); the helper fits that to the print head's 384 dots and applies the
+# vendor's halftone, so the Windows SDK and the Linux helper see the same image.
 _HELPER_LOCK = threading.Lock()
 
 
@@ -39,7 +39,7 @@ def helper_available() -> bool:
 
 def _job_label(layout: dict) -> dict:
     label = dict(layout)
-    label["image"] = base64.b64encode(render_png_for_print(layout, 384)).decode("ascii")
+    label["image"] = base64.b64encode(render_png(layout, 8)).decode("ascii")
     return label
 
 

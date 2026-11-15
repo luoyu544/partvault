@@ -345,14 +345,3 @@ def render_png(layout: dict, scale: float = 8) -> bytes:
     out = io.BytesIO()
     image.save(out, format="PNG", optimize=True)
     return out.getvalue()
-
-
-def render_png_for_print(layout: dict, width_px: int = 384) -> bytes:
-    """Render at the print head's native dot width (T50 = 384 dots / 48 mm).
-
-    The layout is 50 mm wide, so drawing at 384 px maps the whole label onto the
-    head exactly the way the vendor SDK's ``MaxDotValue = 384`` does. Drawing at
-    the final size avoids resampling a rendered bitmap afterwards — that
-    resample is what smeared the small text.
-    """
-    return render_png(layout, width_px / float(LABEL_W))

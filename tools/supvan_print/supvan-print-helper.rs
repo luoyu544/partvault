@@ -198,27 +198,29 @@ async fn print_job(job_path: &str, out_path: &str) -> serde_json::Value {
                 }
             };
             // 50 mm media renders 400 px wide, but the T50 head carries 384
-            // dots (48 mm). Scale the width onto the head, keeping the 30 mm
-            // height — this mirrors the vendor SDK's MaxDotValue = 384.
+            // dots (48 mm). Fit the width onto the head, keeping the 30 mm
+            // height — the same mapping as the vendor SDK's MaxDotValue = 384.
             let img = if img.width() != 384 {
                 img.resize_exact(384, img.height(), image::imageops::FilterType::Lanczos3)
             } else {
                 img
             };
             let gray = img.to_luma8();
-            // Labels are text, QR and barcodes, not photos: threshold to pure
-            // black/white so thin strokes stay solid instead of dissolving
-            // into halftone speckle. SUPVAN_THRESHOLD tunes the cut-off.
-            let threshold: u8 = std::env::var("SUPVAN_THRESHOLD")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(150);
-            let mut raw = gray.into_raw();
-            for px in raw.iter_mut() {
-                *px = if *px < threshold { 0 } else { 255 };
-            }
-            let (w, h) = (384u32, (raw.len() / 384) as u32);
-            let buffers = match page::grayscale(&raw, w, h, density, DitherMode::Bayer) {
+            // The vendor SDK's ImgConverter quantises to 16 grey levels, error
+            // diffuses, then thresholds at 125. Reproducing that keeps 1 mm
+            // Chinese glyphs readable; a plain threshold snaps their thin
+            // strokes into specks. SUPVAN_DITHER overrides the kernel.
+            let dither = match std::env::var("SUPVAN_DITHER")
+                .unwrap_or_default()
+                .as_str()
+            {
+                "bayer" => DitherMode::Bayer,
+                "floyd-steinberg" | "fs" => DitherMode::FloydSteinberg,
+                "atkinson" => DitherMode::Atkinson,
+                _ => DitherMode::Vendor16,
+            };
+            let (w, h) = (gray.width(), gray.height());
+            let buffers = match page::grayscale(gray.as_raw(), w, h, density, dither) {
                 Ok(b) => b,
                 Err(e) => {
                     return serde_json::json!({
