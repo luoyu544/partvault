@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}拍照入库 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>拍照入库</h1>
+    <p class="sub">上传淘宝/立创商品页截图或商家标签，自动识别型号、封装、数量，核对后一键入库</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/stock/scan?mode=in">{{ icon('scan') }}扫码直接入库</a>
+    <a class="btn" href="/parts">{{ icon('chevron-left') }}返回物料库</a>
+  </div>
+</div>
+
+<form id="intakeForm" method="post" action="/intake/confirm">
+  <input type="hidden" id="imageField" name="image" value="">
+  <input type="hidden" id="jobField" name="job_id" value="">
+  <input type="hidden" id="part_id" name="part_id" value="">
+  <input type="hidden" name="lcsc_code" data-lcsc-code value="">
+  <input type="hidden" name="lcsc_mode" data-lcsc-mode-input value="blank">
+
+  <div class="grid-side">
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>{{ icon('camera') }}1 · 上传图片</h2><span class="badge">支持 JPG / PNG / 截图</span></div>
+        <div class="dropzone" id="dropzone">
+          <div class="big">{{ icon('camera') }}</div>
+          <p><b>点击选择</b>，或把图片拖到这里</p>
+          <p class="small">商品页截图、订单截图、商家标签、料袋照片都可以</p>
+        </div>
+        <input type="file" id="ocrFile" accept="image/*" style="display:none">
+        <div class="row mt">
+          <button type="button" class="btn" id="cameraOpen">{{ icon('camera') }}电脑摄像头拍照识别</button>
+          <button type="button" class="btn" id="phoneCameraBtn">{{ icon('phone') }}手机拍照识别</button>
+          <button type="button" class="btn primary" id="cameraShot" style="display:none">{{ icon('camera') }}拍照并识别</button>
+          <button type="button" class="btn" id="cameraClose" style="display:none">{{ icon('close') }}关闭摄像头</button>
+          <span class="small muted" id="cameraState"></span>
+        </div>
+        <input type="file" id="phoneCamera" accept="image/*" capture="environment" style="display:none">
+        <div id="cameraWrap" style="display:none; margin-top:12px">
+          <video id="cameraVideo" playsinline style="width:100%; max-height:360px; background:#0b1220; border-radius:10px"></video>
+          <p class="help mt">把商品页截图/商家标签放进取景框，点「拍照并识别」；识别后自动填入右侧表单。</p>
+        </div>
+        <div id="previewWrap" style="display:none; margin-top:14px">
+          <img id="previewImg" class="preview-img" alt="待识别图片">
+          <div class="row mt">
+            <button type="button" class="btn primary" id="recognizeBtn">{{ icon('spark') }}开始识别</button>
+            <span class="small muted" id="ocrStatus"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-l">
+        <div class="card-head"><h2>{{ icon('check') }}识别结果</h2><span class="badge gray">可人工修改</span></div>
+        <div id="rawWrap" style="display:none">
+          <div class="small muted" id="codeText" style="margin-bottom:8px"></div>
+          <div class="raw" id="rawText"></div>
+        </div>
+        <div id="matchesWrap" class="mt">
+          <div class="small muted" style="margin-bottom:6px">可能已存在的物料（点击选用，避免重复建档）</div>
+          <div id="matches" class="match-list"><p class="muted small">识别后自动匹配…</p></div>
+        </div>
+        <div id="ocrEvidence" class="ocr-evidence" style="display:none"></div>
+      </div>
+
+      <div class="card mt-l lcsc-widget" data-lcsc-widget data-lcsc-mode="fill" data-lcsc-form="#intakeForm">
+        <div class="card-head">
+          <h2>{{ icon('search') }}3 · 立创商城搜索</h2>
+          <span class="badge gray">联网 · 按需查询</span>
+        </div>
+        <p class="small muted">识别后会自动带出型号/名称；也可以手动输入名称、参数或 C 码，查找相似器件。</p>
+        <div class="lcsc-search-row">
+          <input type="text" data-lcsc-query placeholder="如 100nF 50V X7R 0603 / TP4054 / C17710">
+          <button type="button" class="btn primary" data-lcsc-search>{{ icon('search') }}搜索立创</button>
+        </div>
+        <div class="lcsc-filter-row">
+          <input type="text" data-lcsc-package placeholder="封装，如 0603（可选）">
+          <input type="text" data-lcsc-brand placeholder="品牌，如 TI（可选）">
+          <label class="inline small"><input type="checkbox" data-lcsc-instock checked> 只看有库存</label>
+          <button type="button" class="btn sm" data-lcsc-clear>{{ icon('refresh') }}清空</button>
+        </div>
+        <div class="small muted lcsc-status" data-lcsc-status>搜索是实时的，不会把立创商品库保存到本机。</div>
+        <div class="lcsc-results" data-lcsc-results></div>
+        <div class="lcsc-selected" data-lcsc-selected hidden></div>
+      </div>
+
+      <div class="card mt-l">
+        <div class="card-head"><h2>{{ icon('spark') }}识别小技巧</h2></div>
+        <ul class="small muted" style="margin:0; padding-left:18px; line-height:1.9">
+          <li>截图尽量包含「标题 + 型号 + 数量 + 价格」。</li>
+          <li>购买页数量按「规格数量 × 购买数量」计算；例如 SKU 写“10个”，购买 x1，入库数量就是 10。</li>
+          <li>商家标签的 QTY 直接作为数量，不再乘购买数量。</li>
+          <li>商家标签上有二维码/条码的，会优先解码读取料号。</li>
+          <li>识别不准没关系，右侧表单可以直接改，改完再入库；橙色输入框表示低置信度。</li>
+          <li>原图会自动保存到物料附件，方便以后核对。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>{{ icon('check') }}2 · 确认信息</h2></div>
+
+        <div class="radio-row" style="margin-bottom:14px">
+          <label><input type="radio" name="mode" value="new" checked> 新建物料</label>
+          <label><input type="radio" name="mode" value="existing"> 已有物料</label>
+        </div>
+
+        <div class="field" style="margin-bottom:10px">
+          <label>搜索已有物料</label>
+          <input type="text" id="existingSearch" placeholder="输入型号/名称/编号，边打边搜">
+          <div id="existingResults" class="match-list mt"></div>
+          <div id="selectedPart" class="selected-part mt" style="display:none"></div>
+        </div>
+
+        <div id="newPartFields">
+          <div class="form-grid" style="grid-template-columns:1fr; gap:10px">
+            <div class="field">
+              <label>型号 <span class="req">*</span></label>
+              <input type="text" name="model" placeholder="如 C1525 / 100nF 50V X7R">
+            </div>
+            <div class="field">
+              <label>名称</label>
+              <input type="text" name="name" placeholder="商品标题/描述">
+            </div>
+            <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px">
+              <div class="field">
+                <label>品牌</label>
+                <input type="text" name="brand" placeholder="三星 / TI">
+              </div>
+              <div class="field">
+                <label>封装</label>
+                <input type="text" name="package" placeholder="0603 / SOT-23-6">
+              </div>
+            </div>
+            <div class="field">
+              <label>分类</label>
+              <select name="category_id">
+                <option value="">未分类</option>
+                {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="mt"></div>
+        </div>
+
+        <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px">
+          <div class="field">
+            <label>供应商料号</label>
+            <input type="text" name="supplier_part_no" placeholder="C1525">
+          </div>
+          <div class="field">
+            <label>供应商</label>
+            <select name="supplier_id">
+              <option value="">未指定</option>
+              {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field full">
+            <label>入库库位 <span class="req">*</span></label>
+            <select name="location_id" required>
+              <option value="">— 选择库位 —</option>
+              {% for l in locations %}<option value="{{ l.id }}">{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>数量 <span class="req">*</span></label>
+            <input type="number" step="any" name="qty" required placeholder="0">
+            <div class="small muted" id="qtyBreakdown"></div>
+          </div>
+          <div class="field">
+            <label>单价（元）</label>
+            <input type="number" step="any" name="price" placeholder="0.00">
+          </div>
+          <div class="field">
+            <label>批次</label>
+            <input type="text" name="lot_no" placeholder="可选">
+          </div>
+          <div class="field">
+            <label>日期码</label>
+            <input type="text" name="date_code" placeholder="可选">
+          </div>
+          <div class="field full">
+            <label>备注</label>
+            <input type="text" name="note" placeholder="如 淘宝到货 / 拆机件">
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn primary" type="submit">{{ icon('check') }}确认入库</button>
+          <a class="btn" href="/intake">{{ icon('refresh') }}重新开始</a>
+        </div>
+      </div>
+
+      <div class="card mt-l">
+        <div class="card-head"><h2>{{ icon('camera') }}没有图片？</h2></div>
+        <p class="small muted">也可以直接 <a href="/parts/new">手动新增物料</a>，或到 <a href="/stock">库存流水</a> 里给已有物料入库。</p>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/lcsc.js?v={{ static_version }}"></script>
+{% endblock %}

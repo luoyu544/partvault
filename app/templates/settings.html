@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}设置 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>设置</h1>
+    <p class="sub">分类、供应商、标签抬头、数据备份与历史数据修复</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/settings/backup">{{ icon('download') }}下载完整备份</a>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('settings') }}常规</h2></div>
+      <form method="post" action="/settings/general">
+        <div class="form-grid">
+          <div class="field">
+            <label>系统名称</label>
+            <input type="text" name="site_name" value="{{ settings.get('site_name', '元件库管家') }}">
+          </div>
+          <div class="field">
+            <label>标签抬头 / 品牌</label>
+            <input type="text" name="label_brand" value="{{ settings.get('label_brand', '元件库') }}">
+          </div>
+          <div class="field">
+            <label>标签副标题</label>
+            <input type="text" name="label_kind" value="{{ settings.get('label_kind', '元件标签') }}">
+          </div>
+          <div class="field">
+            <label>库位标签副标题</label>
+            <input type="text" name="location_label_kind" value="{{ settings.get('location_label_kind', '库位标签') }}">
+          </div>
+        </div>
+        <div class="form-actions"><button class="btn primary" type="submit">{{ icon('check') }}保存</button></div>
+      </form>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('layers') }}分类</h2><span class="badge">{{ categories|length }} 个</span></div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>名称</th><th>上级</th><th class="right">操作</th></tr></thead>
+          <tbody>
+          {% for c in categories %}
+            <tr>
+              <td>{{ c.name }}</td>
+              <td class="small muted">{{ cat_map.get(c.parent_id, '—') }}</td>
+              <td class="right">
+                <form method="post" action="/settings/category/{{ c.id }}/delete" data-confirm="删除分类 {{ c.name }}？">
+                  <button class="btn sm danger" type="submit">{{ icon('trash') }}删除</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form method="post" action="/settings/category" class="mt">
+        <div class="row">
+          <input type="text" name="name" placeholder="新分类名，如 继电器" style="flex:1" required>
+          <select name="parent_id" style="width:150px">
+            <option value="">顶级分类</option>
+            {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          <button class="btn" type="submit">{{ icon('plus') }}添加</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('users') }}供应商</h2><span class="badge">{{ suppliers|length }} 个</span></div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>名称</th><th>类型</th><th>主页</th><th class="right">操作</th></tr></thead>
+          <tbody>
+          {% for s in suppliers %}
+            {% set usage = supplier_usage.get(s.id, {}) %}
+            <tr>
+              <td>{{ s.name }}</td>
+              <td class="small muted">{{ {'lcsc':'立创','taobao':'淘宝','other':'其他'}.get(s.type, s.type) }}</td>
+              <td class="small">{% if s.homepage %}<a href="{{ s.homepage }}" target="_blank" rel="noopener">打开 {{ icon('external') }}</a>{% else %}—{% endif %}</td>
+              <td class="right">
+                <div class="row" style="justify-content:flex-end;gap:6px">
+                  <a class="btn sm" href="/settings/supplier/{{ s.id }}/edit">{{ icon('edit') }}编辑</a>
+                  {% if not (usage.get('parts') or usage.get('sources') or usage.get('lots')) %}
+                  <form method="post" action="/settings/supplier/{{ s.id }}/delete"
+                        data-confirm="确定删除供应商「{{ s.name }}」？">
+                    <button class="btn sm danger" type="submit">{{ icon('trash') }}删除</button>
+                  </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form method="post" action="/settings/supplier" class="mt">
+        <div class="form-grid">
+          <div class="field"><label>名称</label><input type="text" name="name" required maxlength="120" placeholder="如 立创商城 / 淘宝店铺"></div>
+          <div class="field"><label>类型</label>
+            <select name="type"><option value="lcsc">立创</option><option value="taobao">淘宝</option><option value="other" selected>其他</option></select>
+          </div>
+          <div class="field full"><label>主页</label><input type="url" name="homepage" maxlength="300" placeholder="https://..."></div>
+          <div class="field full"><label>备注</label><input type="text" name="note" placeholder="店铺名、联系人、采购说明等"></div>
+        </div>
+        <div class="form-actions"><button class="btn" type="submit">{{ icon('plus') }}添加供应商</button></div>
+      </form>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('refresh') }}历史归还修复</h2>
+        <span class="badge">{{ returns_report.missing_lots }} 个待检查批次</span>
+      </div>
+      <p class="small muted">旧版本归还时可能只记录了数量，没有保留原批次号、日期码和单价。系统可以从借出流水里自动补全仍能追溯的部分。</p>
+      <div class="kv mt">
+        <div class="k">归还流水</div><div>{{ returns_report.return_moves }} 条</div>
+        <div class="k">可自动补全</div><div>{{ returns_report.repairable_lots }} 个批次</div>
+        <div class="k">跨批次 / 信息冲突</div><div>{{ returns_report.ambiguous_lots }} 个</div>
+        <div class="k">无原始批次信息</div><div>{{ returns_report.no_source_lots }} 个</div>
+      </div>
+      {% if returns_report.repairable_lots %}
+      <form method="post" action="/settings/returns/repair" class="mt"
+            data-confirm="将从借出流水补全 {{ returns_report.repairable_lots }} 个历史归还批次的批次号、日期码、单价和供应商，是否继续？">
+        <button class="btn primary" type="submit">{{ icon('check') }}修复可追溯批次</button>
+      </form>
+      {% else %}
+      <p class="help mt">当前没有可以自动补全的批次。跨批次或原始借出流水缺失的记录无法可靠还原，不会自动修改。</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('archive') }}数据概况</h2></div>
+      <div class="kv">
+        <div class="k">物料</div><div>{{ counts.parts }} 个档案</div>
+        <div class="k">批次</div><div>{{ counts.lots }} 条</div>
+        <div class="k">流水</div><div>{{ counts.moves }} 条</div>
+        <div class="k">库位</div><div>{{ counts.locations }} 个</div>
+        <div class="k">数据库</div><div>{{ '%.1f'|format(db_size / 1024 / 1024) }} MB</div>
+        <div class="k">数据目录</div><div class="mono small" style="word-break:break-all">{{ data_dir }}</div>
+      </div>
+    </div>
+
+    <div class="card mt-l" id="backup">
+      <div class="card-head"><h2>{{ icon('download') }}备份 / 恢复</h2></div>
+      <p class="small muted">备份包含 SQLite 数据库和所有上传图片。换电脑时把整个文件夹拷走即可。</p>
+      <div class="form-actions"><a class="btn primary" href="/settings/backup">{{ icon('download') }}下载完整备份 zip</a></div>
+      <p class="help mt">建议每周备份一次，尤其是大批量导入、盘点或恢复之前。</p>
+
+      <div class="divider"></div>
+      <h3 class="card-subtitle">从本机备份恢复</h3>
+      {% if backups %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>备份文件</th><th>时间</th><th class="num">大小</th><th class="right">操作</th></tr></thead>
+          <tbody>
+          {% for b in backups %}
+            <tr>
+              <td class="mono small">{{ b.name }}</td>
+              <td class="small muted nowrap">{{ b.mtime.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td class="num small">{{ '%.1f'|format(b.size / 1024 / 1024) }} MB</td>
+              <td class="right">
+                <div class="row" style="justify-content:flex-end;gap:6px">
+                  <a class="btn sm" href="/settings/backup/{{ b.name }}">{{ icon('download') }}下载</a>
+                  <form method="post" action="/settings/restore"
+                        data-confirm="恢复备份「{{ b.name }}」会覆盖当前数据库和上传图片，并自动先备份当前数据。确定继续？">
+                    <input type="hidden" name="backup_name" value="{{ b.name }}">
+                    <input type="hidden" name="confirm" value="1">
+                    <button class="btn sm danger" type="submit">{{ icon('refresh') }}恢复</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="help">还没有本机备份。点击上方按钮下载后会出现在这里。</p>
+      {% endif %}
+
+      <div class="divider"></div>
+      <h3 class="card-subtitle">上传备份 zip 恢复</h3>
+      <form method="post" action="/settings/restore" enctype="multipart/form-data">
+        <div class="field">
+          <label>备份文件（.zip）</label>
+          <input type="file" name="file" accept=".zip,application/zip" required>
+        </div>
+        <label class="inline mt"><input type="checkbox" name="confirm" value="1" required> 我确认恢复会覆盖当前数据</label>
+        <div class="form-actions">
+          <button class="btn danger" type="submit">{{ icon('refresh') }}上传并恢复</button>
+        </div>
+      </form>
+      <p class="help">恢复前会自动保存一份当前数据的安全备份。恢复期间请暂时不要在其他页面出入库或盘点。备份格式必须包含 <span class="mono">partvault.db</span>。</p>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('spark') }}关于</h2></div>
+      <p class="small muted">{{ site_name }} · 本地优先的元器件/库位管理<br>数据全部保存在本机，不上传云端。</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

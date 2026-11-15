@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}标签打印 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>标签打印</h1>
+    <p class="sub">选择物料 → 直接打印到硕方 T50/T80，或生成 A4 不干胶 PDF / Supvan 50×30 `.sef` 文件</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/location-labels">{{ icon('location') }}库位标签</a>
+  </div>
+</div>
+
+<div class="grid-side">
+  <div>
+    <form class="filters" action="/labels" method="get">
+      <input class="grow" type="text" name="q" value="{{ q }}" placeholder="搜索要打印的物料">
+      <button class="btn primary" type="submit">{{ icon('search') }}搜索</button>
+      <a class="btn" href="/labels">{{ icon('refresh') }}重置</a>
+    </form>
+
+    {% if parts or selected_parts %}
+    <form method="post" action="/labels/pdf" id="labelForm">
+      <div class="card picker-card">
+        <div class="picker-head">
+          <div class="picker-copy">
+            <h2>选择要打印的物料</h2>
+            <p class="help">已选 <b data-ms-count>0</b> 项 · 点开下拉勾选；按住 <kbd>Shift</kbd> 点首尾可连续多选。</p>
+          </div>
+          <div class="ms" data-ms>
+            <button type="button" class="btn ms-toggle" data-ms-toggle aria-expanded="false" aria-controls="partPicker">
+              {{ icon('plus') }}<span data-ms-toggle-text>选择物料</span>{{ icon('chevron-down', 'ms-caret') }}
+            </button>
+            <div class="ms-panel" id="partPicker" data-ms-panel hidden>
+              <div class="ms-search">
+                {{ icon('search') }}
+                <input type="search" placeholder="搜索型号 / 名称 / 编号 / 库位" data-ms-search autocomplete="off">
+              </div>
+              <div class="ms-list" data-ms-list>
+                {% for p in parts %}
+                <label class="ms-option" data-search="{{ p.model }} {{ p.name or '' }} {{ p.code }} {{ p.package or '' }} {{ p._loc_summary or '' }}">
+                  <input type="checkbox" name="ids" value="{{ p.id }}" data-ms-option
+                         data-label="{{ p.model }}" data-sub="{{ p.code }}"
+                         {{ 'checked' if p.id in selected }}>
+                  <span class="ms-check">{{ icon('check') }}</span>
+                  <span class="ms-option-main">
+                    <b>{{ p.model }}</b>
+                    <small>{{ p.name or '—' }}</small>
+                  </span>
+                  <span class="ms-option-meta">
+                    {{ p.package or '—' }}
+                    <small>{{ '%g'|format(p._qty) }} {{ p.unit or 'PCS' }}</small>
+                  </span>
+                </label>
+                {% endfor %}
+              </div>
+              <p class="ms-empty" data-ms-empty hidden>没有匹配项</p>
+              <div class="ms-foot">
+                <button type="button" class="btn sm" data-ms-all>全选当前</button>
+                <button type="button" class="btn sm" data-ms-clear>清空</button>
+                <button type="button" class="btn sm primary" data-ms-done>完成</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {% for p in extra_selected %}
+        <input type="checkbox" name="ids" value="{{ p.id }}" checked hidden
+               data-label="{{ p.model }}" data-sub="{{ p.code }}">
+        {% endfor %}
+        <div class="ms-chips" data-ms-chips hidden></div>
+        <p class="ms-hint" data-ms-hint>还没有选择；点右上角“选择物料”打开列表。</p>
+      </div>
+
+      <div class="card mt">
+        <div class="form-grid">
+          <div class="field">
+            <label>标签抬头 / 品牌</label>
+            <input type="text" name="brand" value="{{ label_brand }}" placeholder="如 我的元件库 / 嘉立创">
+          </div>
+          <div class="field">
+            <label>选项</label>
+            <label class="inline small" style="margin-top:8px"><input type="checkbox" name="show_price" value="1"> 在标签上显示单价（写入 LOT 行）</label>
+          </div>
+        </div>
+        <div class="form-actions">
+          <div class="menu" data-menu>
+            <button class="btn primary menu-toggle" type="button" data-menu-toggle aria-haspopup="true" aria-expanded="false">
+              {{ icon('printer') }}打印 / 导出{{ icon('chevron-down') }}
+            </button>
+            <div class="menu-panel" data-menu-panel hidden>
+              <button class="menu-item" type="submit" formaction="/labels/direct-print" data-label-submit>
+                <span class="menu-ico">{{ icon('printer') }}</span>
+                <span><b>直接打印</b><small>主机 USB 直连硕方 T50/T80</small></span>
+              </button>
+              <button class="menu-item" type="submit" formaction="/labels/pdf" data-label-submit>
+                <span class="menu-ico">{{ icon('file') }}</span>
+                <span><b>下载 A4 PDF</b><small>普通打印机 + A4 不干胶（3×8）</small></span>
+              </button>
+              <button class="menu-item" type="submit" formaction="/labels/sef" data-label-submit>
+                <span class="menu-ico">{{ icon('tag') }}</span>
+                <span><b>下载 Supvan .sef</b><small>50×30mm，用 SupvanEditor 打开</small></span>
+              </button>
+            </div>
+          </div>
+          <span class="help">直接打印需主机 USB 连接硕方 T50/T80；标签按 `.sef` 模板排版（二维码在右、条形码在底部）。</span>
+        </div>
+      </div>
+    </form>
+    {% else %}
+    <div class="card">
+      <div class="empty">
+        <div class="big">{{ icon('tag') }}</div>
+        没有物料可打印
+        <div class="mt"><a class="btn" href="/parts/new">{{ icon('plus') }}新增物料</a></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('tag') }}标签预览</h2><span class="badge">50 × 30 mm</span></div>
+      <div class="label-sheet" aria-label="50×30 毫米标签预览">
+        <div class="ls-top ls-top-left"><span class="ls-brand">元件库</span><span class="ls-kind">元件标签</span></div>
+        <div class="ls-body">
+          <div class="ls-left">
+            <div class="ls-model">C1525</div>
+            <div class="ls-name">100nF 50V X7R</div>
+            <div class="ls-row"><span>0603</span><span class="ls-qty">4000</span><span>PCS</span></div>
+            <div class="ls-lot">LOT 2026-10-26</div>
+          </div>
+          <div class="ls-qr"></div>
+        </div>
+        <div class="ls-barcode"></div>
+      </div>
+      <p class="help mt">二维码内容为物料编号（PV-P-…），底部是 CODE128 条形码；和下载的 `.sef` 排版一致。</p>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('printer') }}硕方 T50/T80 打印机</h2><span class="badge" id="printerStatusBadge">检测中…</span></div>
+      <p class="small muted" id="printerStatusText">正在检测主机 USB 打印机…</p>
+      <div class="form-actions" style="margin-top:8px">
+        <button class="btn sm" type="button" id="printerRefresh">{{ icon('refresh') }}刷新状态</button>
+      </div>
+      <p class="help mt">直接打印由运行本系统的主机通过 USB 发送；手机、平板、电脑都可以操作。</p>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('printer') }}怎么打印</h2></div>
+      <div class="small muted" style="line-height:1.9">
+        <b>直接打印：</b>主机 USB 连接硕方 T50/T80，选好后点“直接打印”，标签直接从打印机出纸。<br>
+        <b>A4 PDF：</b>普通打印机 + A4 不干胶（3×8 排列，50×30mm）。<br>
+        <b>Supvan .sef：</b>下载后用 SupvanEditor 打开，发送到 T50Pro。<br>
+        <b>库位码：</b>到“库位标签”页选择库位，打印方式相同。
+      </div>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('spark') }}批量建议</h2></div>
+      <p class="small muted">先按库位筛选物料，按住 Shift 连选后一次生成整页，贴到对应的料盒/抽屉上。</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

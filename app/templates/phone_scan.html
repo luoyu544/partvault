@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>手机扫码枪 · {{ site_name }}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="phone-scan-body">
+<main class="phone-scan-page" id="phoneScanApp"
+      data-token="{{ phone_token }}" data-valid="{{ '1' if phone_valid else '0' }}">
+  <header class="phone-scan-head">
+    <div class="phone-brand"><span class="brand-icon">{{ icon('chip') }}</span><span>{{ site_name }}</span></div>
+    <div class="phone-scan-sub">手机扫码枪</div>
+  </header>
+
+  {% if not phone_valid %}
+  <section class="phone-card phone-invalid">
+    <div class="phone-invalid-icon">{{ icon('alert') }}</div>
+    <h1>配对已失效</h1>
+    <p>请回到电脑上的「扫码出入库」页面，刷新后重新扫描二维码。</p>
+    <a class="btn primary" href="/">回到首页</a>
+  </section>
+  {% else %}
+  <div class="phone-conn" id="phoneConn"><span class="dot"></span><span id="phoneConnText">正在连接电脑…</span></div>
+
+  <div class="phone-result" id="phoneResult">
+    <div class="phone-result-label">等待扫描</div>
+    <div class="phone-result-code">对准物品签或库位签</div>
+  </div>
+
+  <section class="phone-card" id="livePanel" hidden>
+    <div class="phone-camera-wrap" id="phoneCameraWrap">
+      <video id="phoneVideo" playsinline muted></video>
+      <div class="phone-camera-frame"></div>
+    </div>
+    <div class="phone-actions">
+      <button class="btn primary" type="button" id="cameraStart">{{ icon('camera') }}打开实时摄像头</button>
+      <button class="btn" type="button" id="cameraStop" hidden>{{ icon('close') }}停止</button>
+    </div>
+    <p class="help" id="liveHint">打开摄像头后，把标签放进方框内即可自动识别。</p>
+  </section>
+
+  <section class="phone-card">
+    <div class="phone-actions">
+      <button class="btn primary" type="button" id="photoBtn">{{ icon('camera') }}拍照扫描</button>
+      <button class="btn" type="button" id="galleryBtn">{{ icon('file') }}从相册选择</button>
+    </div>
+    <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+    <input id="galleryInput" type="file" accept="image/*" hidden>
+    <p class="help" id="photoHint">拍一张标签照片，自动识别并发送到电脑。</p>
+    <img id="phonePreview" class="phone-preview" alt="待识别照片" hidden>
+  </section>
+
+  <details class="phone-manual">
+    <summary>识别不了？手工输入条码</summary>
+    <form class="phone-manual-form" id="manualForm">
+      <input id="manualCode" type="text" autocomplete="off" placeholder="PV-P-... / PV-L-...">
+      <button class="btn primary" type="submit">{{ icon('arrow-right') }}发送</button>
+    </form>
+  </details>
+
+  <p class="phone-footnote">手机和电脑需要访问同一个系统。扫描结果只发送到电脑当前打开的扫码页，不会保存在手机上。</p>
+  {% endif %}
+</main>
+
+{% if phone_valid %}
+<script>
+(function () {
+  var app = document.getElementById('phoneScanApp');
+  if (!app) return;
+  var token = app.dataset.token || '';
+  var resultBox = document.getElementById('phoneResult');
+  var resultLabel = resultBox ? resultBox.querySelector('.phone-result-label') : null;
+  var resultCode = resultBox ? resultBox.querySelector('.phone-result-code') : null;
+  var conn = document.getElementById('phoneConn');
+  var connText = document.getElementById('phoneConnText');
+  var livePanel = document.getElementById('livePanel');
+  var cameraWrap = document.getElementById('phoneCameraWrap');
+  var video = document.getElementById('phoneVideo');
+  var cameraStart = document.getElementById('cameraStart');
+  var cameraStop = document.getElementById('cameraStop');
+  var liveHint = document.getElementById('liveHint');
+  var photoBtn = document.getElementById('photoBtn');
+  var galleryBtn = document.getElementById('galleryBtn');
+  var photoInput = document.getElementById('photoInput');
+  var galleryInput = document.getElementById('galleryInput');
+  var photoHint = document.getElementById('photoHint');
+  var preview = document.getElementById('phonePreview');
+  var manualForm = document.getElementById('manualForm');
+  var manualCode = document.getElementById('manualCode');
+  var stream = null;
+  var frameTimer = null;
+  var busy = false;
+  var lastCode = '';
+  var lastCodeAt = 0;
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function setConn(ok, text) {
+    if (!conn || !connText) return;
+    conn.classList.toggle('online', !!ok);
+    connText.textContent = text;
+  }
+
+  function showResult(kind, label, code) {
+    if (!resultBox) return;
+    resultBox.className = 'phone-result' + (kind ? ' ' + kind : '');
+    resultLabel.textContent = label || '';
+    resultCode.textContent = code || '';
+  }
+
+  function heartbeat() {
+    fetch('/api/scan-phone/' + encodeURIComponent(token) + '/hello', { method: 'POST' })
+      .then(function (r) {
+        return r.json().then(function (data) { return { ok: r.ok, status: r.status, data: data }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          setConn(false, res.status === 404 ? '配对已失效' : '连接异常');
+        } else if (res.data.desktop_online) {
+          setConn(true, '已连接电脑');
+        } else {
+          setConn(false, '电脑页面未连接');
+        }
+      })
+      .catch(function () { setConn(false, '暂时连不上电脑'); });
+  }
+
+  function acceptedCode(code) {
+    var now = Date.now();
+    if (code === lastCode && now - lastCodeAt < 6000) return;
+    lastCode = code;
+    lastCodeAt = now;
+    if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+    showResult('ok', '已发送到电脑', code);
+  }
+
+  function uploadBlob(blob, fromLive) {
+    if (!blob || busy) return;
+    busy = true;
+    var fd = new FormData();
+    fd.append('file', blob, 'scan_' + Date.now() + '.jpg');
+    fetch('/api/scan-phone/' + encodeURIComponent(token) + '/upload', { method: 'POST', body: fd })
+      .then(function (r) {
+        return r.json().then(function (data) { return { ok: r.ok, status: r.status, data: data }; });
+      })
+      .then(function (res) {
+        busy = false;
+        if (res.status === 404) {
+          setConn(false, '配对已失效');
+          showResult('bad', '配对已失效', '请在电脑上刷新扫码页后重新扫码');
+          stopCamera();
+          return;
+        }
+        if (res.status === 409) {
+          setConn(false, '电脑页面未连接');
+          showResult('bad', '电脑页面未连接', '请在电脑上刷新扫码页后重新扫码');
+          stopCamera();
+          return;
+        }
+        if (!res.ok) {
+          if (!fromLive) {
+            showResult('bad', '没有识别到条码', (res.data && res.data.error) || '请靠近标签，保持清晰后重拍');
+          }
+          return;
+        }
+        if (res.data.duplicate) return;
+        acceptedCode(res.data.code);
+      })
+      .catch(function () {
+        busy = false;
+        if (!fromLive) showResult('bad', '上传失败', '请检查手机和电脑是否在同一网络');
+      });
+  }
+
+  function captureFrame() {
+    if (!stream || busy || !video || !video.videoWidth) return;
+    var w = video.videoWidth;
+    var h = video.videoHeight;
+    var scale = Math.min(1, 960 / Math.max(w, h));
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(w * scale));
+    canvas.height = Math.max(1, Math.round(h * scale));
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(function (blob) {
+      if (blob) uploadBlob(blob, true);
+    }, 'image/jpeg', 0.74);
+  }
+
+  function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      liveHint.textContent = '当前浏览器不支持实时摄像头，请使用下方的拍照扫描。';
+      return;
+    }
+    cameraStart.disabled = true;
+    liveHint.textContent = '正在打开摄像头…';
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then(function (s) {
+        stream = s;
+        video.srcObject = s;
+        return video.play();
+      })
+      .then(function () {
+        cameraWrap.classList.add('on');
+        cameraStart.hidden = true;
+        cameraStop.hidden = false;
+        cameraStart.disabled = false;
+        liveHint.textContent = '摄像头已开启，把标签放进方框内。';
+        frameTimer = setInterval(captureFrame, 1100);
+        setTimeout(captureFrame, 500);
+      })
+      .catch(function () {
+        cameraStart.disabled = false;
+        liveHint.textContent = '摄像头打开失败，请允许权限，或改用下方的拍照扫描。';
+      });
+  }
+
+  function stopCamera() {
+    if (frameTimer) { clearInterval(frameTimer); frameTimer = null; }
+    if (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      stream = null;
+    }
+    if (video) video.srcObject = null;
+    if (cameraWrap) cameraWrap.classList.remove('on');
+    if (cameraStart) { cameraStart.hidden = false; cameraStart.disabled = false; }
+    if (cameraStop) cameraStop.hidden = true;
+    if (liveHint) liveHint.textContent = '打开摄像头后，把标签放进方框内即可自动识别。';
+    busy = false;
+  }
+
+  function handleFile(file, input) {
+    if (!file) return;
+    if (preview) {
+      if (preview.dataset.url) URL.revokeObjectURL(preview.dataset.url);
+      var url = URL.createObjectURL(file);
+      preview.dataset.url = url;
+      preview.src = url;
+      preview.hidden = false;
+    }
+    showResult('busy', '正在识别…', '请稍候');
+    uploadBlob(file, false);
+    if (input) input.value = '';
+  }
+
+  function pushManual(code) {
+    var c = String(code || '').trim();
+    if (!c) { showResult('bad', '请输入条码', ''); return; }
+    fetch('/api/scan-phone/' + encodeURIComponent(token) + '/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: 'code=' + encodeURIComponent(c)
+    })
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, status: r.status, data: data }; }); })
+      .then(function (res) {
+        if (res.status === 404) {
+          setConn(false, '配对已失效');
+          showResult('bad', '配对已失效', '请在电脑上刷新扫码页后重新扫码');
+          return;
+        }
+        if (res.status === 409) {
+          setConn(false, '电脑页面未连接');
+          showResult('bad', '电脑页面未连接', '请在电脑上刷新扫码页后重新扫码');
+          return;
+        }
+        if (!res.ok) {
+          showResult('bad', '发送失败', (res.data && res.data.error) || '请重试');
+          return;
+        }
+        if (!res.data.duplicate) acceptedCode(res.data.code);
+        manualCode.value = '';
+      })
+      .catch(function () { showResult('bad', '发送失败', '请检查网络后重试'); });
+  }
+
+  var canLive = !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  if (canLive) {
+    livePanel.hidden = false;
+  } else {
+    photoHint.textContent = '当前是普通 HTTP 连接，浏览器禁止实时摄像头；直接拍照识别即可，同样会发送到电脑。';
+  }
+
+  cameraStart.addEventListener('click', startCamera);
+  cameraStop.addEventListener('click', stopCamera);
+  photoBtn.addEventListener('click', function () { photoInput.click(); });
+  galleryBtn.addEventListener('click', function () { galleryInput.click(); });
+  photoInput.addEventListener('change', function () { handleFile(photoInput.files && photoInput.files[0], photoInput); });
+  galleryInput.addEventListener('change', function () { handleFile(galleryInput.files && galleryInput.files[0], galleryInput); });
+  manualForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    pushManual(manualCode.value);
+  });
+  window.addEventListener('beforeunload', stopCamera);
+
+  heartbeat();
+  setInterval(heartbeat, 10000);
+})();
+</script>
+{% endif %}
+</body>
+</html>

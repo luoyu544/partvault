@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}库位标签 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>库位标签</h1>
+    <p class="sub">选择库位 → 直接打印到硕方 T50/T80，或生成 A4 不干胶 PDF / Supvan 50×30 `.sef`；二维码内容为库位码</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/locations">{{ icon('chevron-left') }}返回库位</a>
+    <a class="btn" href="/labels">{{ icon('tag') }}物料标签</a>
+  </div>
+</div>
+
+<div class="grid-side">
+  <div>
+    <form class="filters" action="/location-labels" method="get">
+      <input class="grow" type="text" name="q" value="{{ q }}" placeholder="搜索库位编码 / 名称">
+      <button class="btn primary" type="submit">{{ icon('search') }}搜索</button>
+      <a class="btn" href="/location-labels">{{ icon('refresh') }}重置</a>
+    </form>
+
+    {% if locations or selected_locations %}
+    <form method="post" action="/location-labels/pdf" id="locationLabelForm">
+      <div class="card picker-card">
+        <div class="picker-head">
+          <div class="picker-copy">
+            <h2>选择要打印的库位</h2>
+            <p class="help">已选 <b data-ms-count>0</b> 个库位 · 点开下拉勾选；按住 <kbd>Shift</kbd> 点首尾可连续多选。</p>
+          </div>
+          <div class="ms" data-ms>
+            <button type="button" class="btn ms-toggle" data-ms-toggle aria-expanded="false" aria-controls="locationPicker">
+              {{ icon('plus') }}<span data-ms-toggle-text>选择库位</span>{{ icon('chevron-down', 'ms-caret') }}
+            </button>
+            <div class="ms-panel" id="locationPicker" data-ms-panel hidden>
+              <div class="ms-search">
+                {{ icon('search') }}
+                <input type="search" placeholder="搜索库位编码 / 名称 / 路径" data-ms-search autocomplete="off">
+              </div>
+              <div class="ms-list" data-ms-list>
+                {% for l in locations %}
+                <label class="ms-option" data-search="{{ l.code }} {{ l.name or '' }} {{ l._path or '' }}">
+                  <input type="checkbox" name="ids" value="{{ l.id }}" data-ms-option
+                         data-label="{{ l.code }}" data-sub="{{ l.name or '' }}"
+                         {{ 'checked' if l.id in selected }}>
+                  <span class="ms-check">{{ icon('check') }}</span>
+                  <span class="ms-option-main">
+                    <b class="mono">{{ l.code }}</b>
+                    <small>{{ l.name or '—' }}</small>
+                  </span>
+                  <span class="ms-option-meta">
+                    {{ l._path or '' }}
+                    <small>{{ l._count }} 种 · {{ '%g'|format(l._qty) }}</small>
+                  </span>
+                </label>
+                {% endfor %}
+              </div>
+              <p class="ms-empty" data-ms-empty hidden>没有匹配项</p>
+              <div class="ms-foot">
+                <button type="button" class="btn sm" data-ms-all>全选当前</button>
+                <button type="button" class="btn sm" data-ms-clear>清空</button>
+                <button type="button" class="btn sm primary" data-ms-done>完成</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {% for l in extra_selected %}
+        <input type="checkbox" name="ids" value="{{ l.id }}" checked hidden
+               data-label="{{ l.code }}" data-sub="{{ l.name or '' }}">
+        {% endfor %}
+        <div class="ms-chips" data-ms-chips hidden></div>
+        <p class="ms-hint" data-ms-hint>还没有选择；点右上角“选择库位”打开列表。</p>
+      </div>
+
+      <div class="card mt">
+        <div class="form-grid">
+          <div class="field">
+            <label>标签抬头 / 品牌</label>
+            <input type="text" name="brand" value="{{ label_brand }}" placeholder="如 我的元件库">
+          </div>
+          <div class="field">
+            <label>说明</label>
+            <p class="help" style="margin-top:8px">库位码格式：<span class="mono">PV-L-库位编码</span>；扫到后直接进入库位详情。</p>
+          </div>
+        </div>
+        <div class="form-actions">
+          <div class="menu" data-menu>
+            <button class="btn primary menu-toggle" type="button" data-menu-toggle aria-haspopup="true" aria-expanded="false">
+              {{ icon('printer') }}打印 / 导出{{ icon('chevron-down') }}
+            </button>
+            <div class="menu-panel" data-menu-panel hidden>
+              <button class="menu-item" type="submit" formaction="/location-labels/direct-print" data-label-submit>
+                <span class="menu-ico">{{ icon('printer') }}</span>
+                <span><b>直接打印</b><small>主机 USB 直连硕方 T50/T80</small></span>
+              </button>
+              <button class="menu-item" type="submit" formaction="/location-labels/pdf" data-label-submit>
+                <span class="menu-ico">{{ icon('file') }}</span>
+                <span><b>下载 A4 PDF</b><small>普通打印机 + A4 不干胶（3×8）</small></span>
+              </button>
+              <button class="menu-item" type="submit" formaction="/location-labels/sef" data-label-submit>
+                <span class="menu-ico">{{ icon('tag') }}</span>
+                <span><b>下载 Supvan .sef</b><small>50×30mm，用 SupvanEditor 打开</small></span>
+              </button>
+            </div>
+          </div>
+          <span class="help">直接打印需主机 USB 连接硕方 T50/T80；标签按 `.sef` 模板排版（二维码在右、条形码在底部）。</span>
+        </div>
+      </div>
+    </form>
+    {% else %}
+    <div class="card">
+      <div class="empty">
+        <div class="big">{{ icon('location') }}</div>
+        {% if q %}没有匹配的库位{% else %}还没有库位{% endif %}
+        <div class="mt"><a class="btn primary" href="/locations">{{ icon('plus') }}去新建库位</a></div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('location') }}库位签预览</h2><span class="badge">50 × 30 mm</span></div>
+      <div class="label-sheet" aria-label="50×30 毫米库位标签预览">
+        <div class="ls-top"><span class="ls-kind">库位标签</span><span class="ls-brand">元件库</span></div>
+        <div class="ls-body">
+          <div class="ls-left">
+            <div class="ls-model">A-02-03</div>
+            <div class="ls-name">测试库位</div>
+            <div class="ls-path">A-02 / 抽屉3</div>
+          </div>
+          <div class="ls-qr"></div>
+        </div>
+        <div class="ls-barcode"></div>
+      </div>
+      <p class="help mt">二维码和底部 CODE128 条形码都写入库位码（PV-L-…），和下载的 `.sef` 排版一致。</p>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('printer') }}硕方 T50/T80 打印机</h2><span class="badge" id="printerStatusBadge">检测中…</span></div>
+      <p class="small muted" id="printerStatusText">正在检测主机 USB 打印机…</p>
+      <div class="form-actions" style="margin-top:8px">
+        <button class="btn sm" type="button" id="printerRefresh">{{ icon('refresh') }}刷新状态</button>
+      </div>
+      <p class="help mt">直接打印由运行本系统的主机通过 USB 发送；手机、平板、电脑都可以操作。</p>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('spark') }}库位签建议</h2></div>
+      <p class="small muted">库位编码是二维码的主体。打印后先扫一张确认能进入库位详情，再批量打印整页。</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

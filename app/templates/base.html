@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/app.css?v={{ static_version }}">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="appSidebar">
+    <div class="sidebar-top">
+      <a class="brand" href="/">
+        <span class="brand-icon">{{ icon('chip') }}</span>
+        <span class="brand-copy">
+          <span class="brand-name">{{ site_name }}</span>
+          <small>电子元件库</small>
+        </span>
+      </a>
+      <button class="icon-btn sidebar-close" type="button" data-sidebar-close aria-label="关闭菜单">
+        {{ icon('close') }}
+      </button>
+    </div>
+
+    <nav class="nav" aria-label="主导航">
+      <div class="nav-group-label">总览</div>
+      <a href="/" class="{{ 'on' if active == 'dashboard' }}" {{ 'aria-current=page' if active == 'dashboard' }}>
+        {{ icon('dashboard') }}<span>仪表盘</span>
+      </a>
+      <a href="/parts" class="{{ 'on' if active == 'parts' }}" {{ 'aria-current=page' if active == 'parts' }}>
+        {{ icon('parts') }}<span>物料库</span>
+      </a>
+      <a href="/locations" class="{{ 'on' if active == 'locations' }}" {{ 'aria-current=page' if active == 'locations' }}>
+        {{ icon('location') }}<span>库位</span>
+      </a>
+
+      <div class="nav-group-label">操作</div>
+      <a href="/stock/scan" class="{{ 'on' if active == 'stock_scan' }}" {{ 'aria-current=page' if active == 'stock_scan' }}>
+        {{ icon('scan') }}<span>扫码出入库</span>
+      </a>
+      <a href="/intake" class="{{ 'on' if active == 'intake' }}" {{ 'aria-current=page' if active == 'intake' }}>
+        {{ icon('camera') }}<span>拍照入库</span>
+      </a>
+      <a href="/labels" class="{{ 'on' if active == 'labels' }}" {{ 'aria-current=page' if active == 'labels' }}>
+        {{ icon('tag') }}<span>标签打印</span>
+      </a>
+
+      <div class="nav-group-label">记录</div>
+      <a href="/loans" class="{{ 'on' if active == 'loans' }}" {{ 'aria-current=page' if active == 'loans' }}>
+        {{ icon('loan') }}<span>借出 / 未归还</span>
+        {% if open_loan_count %}<span class="nav-badge js-open-loan-badge" id="navOpenLoanBadge">{{ open_loan_count }}</span>{% else %}<span class="nav-badge js-open-loan-badge" id="navOpenLoanBadge" style="display:none">0</span>{% endif %}
+      </a>
+      <a href="/stock" class="{{ 'on' if active == 'stock' }}" {{ 'aria-current=page' if active == 'stock' }}>
+        {{ icon('stock') }}<span>库存流水</span>
+      </a>
+      <a href="/stocktake" class="{{ 'on' if active == 'stocktake' }}" {{ 'aria-current=page' if active == 'stocktake' }}>
+        {{ icon('check') }}<span>库存盘点</span>
+      </a>
+      <a href="/scan" class="{{ 'on' if active == 'scan' }}" {{ 'aria-current=page' if active == 'scan' }}>
+        {{ icon('qr') }}<span>扫码查询</span>
+      </a>
+      <a href="/bom" class="{{ 'on' if active == 'bom' }}" {{ 'aria-current=page' if active == 'bom' }}>
+        {{ icon('bom') }}<span>BOM 核对</span>
+      </a>
+
+      <div class="nav-group-label">系统</div>
+      <a href="/import" class="{{ 'on' if active == 'import' }}" {{ 'aria-current=page' if active == 'import' }}>
+        {{ icon('upload') }}<span>数据导入</span>
+      </a>
+      <a href="/settings" class="{{ 'on' if active == 'settings' }}" {{ 'aria-current=page' if active == 'settings' }}>
+        {{ icon('settings') }}<span>设置</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="sidebar-status"><span class="dot"></span>服务运行中</div>
+      <div class="muted">库存保存在本机 · 立创搜索需联网</div>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" data-sidebar-close aria-hidden="true"></div>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn mobile-menu-btn" type="button" data-sidebar-toggle aria-label="打开菜单" aria-controls="appSidebar" aria-expanded="false">
+        {{ icon('menu') }}
+      </button>
+      <form class="search" action="/parts" method="get" role="search">
+        <label class="search-field">
+          {{ icon('search', 'search-icon') }}
+          <input name="q" value="{{ q or '' }}" placeholder="搜索型号 / 名称 / 料号 / 编号" aria-label="搜索物料">
+        </label>
+        <button class="search-submit" type="submit">搜索</button>
+      </form>
+      <div class="top-actions">
+        <a class="btn ghost" href="/stock/scan">{{ icon('scan') }}<span class="btn-label">扫码出入库</span></a>
+        <a class="btn ghost" href="/intake">{{ icon('camera') }}<span class="btn-label">拍照入库</span></a>
+        <a class="btn primary" href="/parts/new">{{ icon('plus') }}<span class="btn-label">新增物料</span></a>
+      </div>
+    </header>
+    <div class="content">
+      {% if msg %}<div class="flash ok">{{ icon('check') }}<span>{{ msg }}</span></div>{% endif %}
+      {% if err %}<div class="flash bad">{{ icon('alert') }}<span>{{ err }}</span></div>{% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<nav class="mobile-tabbar" aria-label="快捷导航">
+  <a href="/" class="{{ 'on' if active == 'dashboard' }}">{{ icon('dashboard') }}<span>首页</span></a>
+  <a href="/parts" class="{{ 'on' if active == 'parts' }}">{{ icon('parts') }}<span>物料</span></a>
+  <a href="/stock/scan" class="tab-primary {{ 'on' if active == 'stock_scan' }}">{{ icon('scan') }}<span>扫码</span></a>
+  <a href="/loans" class="{{ 'on' if active == 'loans' }}">
+    {{ icon('loan') }}<span>借出</span>
+    {% if open_loan_count %}<span class="tab-badge js-open-loan-badge">{{ open_loan_count }}</span>{% else %}<span class="tab-badge js-open-loan-badge" style="display:none">0</span>{% endif %}
+  </a>
+  <a href="/intake" class="{{ 'on' if active == 'intake' }}">{{ icon('camera') }}<span>入库</span></a>
+</nav>
+
+<script src="/static/app.js?v={{ static_version }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

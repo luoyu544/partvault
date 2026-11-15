@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>仪表盘</h1>
+    <p class="sub">库存、未归还借出和最近流水一目了然</p>
+  </div>
+  <div class="actions dashboard-actions">
+    <a class="btn primary" href="/stock/scan">{{ icon('scan') }}扫码出入库</a>
+    <a class="btn" href="/intake">{{ icon('camera') }}拍照入库</a>
+    <a class="btn" href="/labels">{{ icon('tag') }}打印标签</a>
+    <a class="btn" href="/parts/new">{{ icon('plus') }}新增物料</a>
+  </div>
+</div>
+
+<div class="cards dashboard-stats">
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('parts') }}</span>
+    <div class="stat-main">
+      <div class="label">物料种类</div>
+      <div class="value">{{ parts_count }}</div>
+      <div class="hint">在库物料档案</div>
+    </div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('archive') }}</span>
+    <div class="stat-main">
+      <div class="label">在库总数量</div>
+      <div class="value">{{ '%.0f'|format(total_qty) }}</div>
+      <div class="hint">所有批次合计</div>
+    </div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('layers') }}</span>
+    <div class="stat-main">
+      <div class="label">库位</div>
+      <div class="value">{{ loc_count }}</div>
+      <div class="hint">柜 / 层 / 盒 / 格</div>
+    </div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('alert') }}</span>
+    <div class="stat-main">
+      <div class="label">低库存</div>
+      <div class="value {{ 'danger' if low_count else '' }}">{{ low_count }}</div>
+      <div class="hint">需要补货的物料</div>
+    </div>
+  </div>
+  <a class="stat has-icon stat-loan {{ 'has-loans' if open_loan_count else '' }}" href="/loans"
+     title="{% if open_loan_count %}查看借出未归还明细{% else %}查看借出记录{% endif %}">
+    <span class="stat-icon">{{ icon('loan') }}</span>
+    <div class="stat-main">
+      <div class="label">借出未归还</div>
+      <div class="value">{{ '%g'|format(open_loan_qty) }}</div>
+      <div class="hint">
+        {% if open_loan_count %}{{ open_loan_count }} 笔记录 · 点击处理 →{% else %}全部已归还{% endif %}
+      </div>
+    </div>
+  </a>
+</div>
+
+{% if open_loans %}
+<div class="card loan-card mt-l">
+  <div class="card-head loan-card-head">
+    <div class="loan-head-title">
+      <span class="loan-alert-icon">{{ icon('alert') }}</span>
+      <div>
+        <h2>借出未归还 <span class="badge danger">{{ open_loan_count }} 笔</span></h2>
+        <p class="small muted">共 {{ '%g'|format(open_loan_qty) }} 件物品在外，归还后自动回库存</p>
+      </div>
+    </div>
+    <a class="btn sm danger" href="/loans">查看全部 {{ icon('arrow-right') }}</a>
+  </div>
+  <div class="table-wrap">
+    <table class="table loan-table">
+      <thead><tr><th>物料</th><th class="num">未还数量</th><th>借用人</th><th class="col-loc">借出库位</th><th class="col-time">借出时间 / 未还时长</th><th class="right">操作</th></tr></thead>
+      <tbody>
+      {% for row in open_loans %}
+        <tr class="loan-open-row">
+          <td>
+            {% if row.part %}<a class="model" href="/parts/{{ row.part.id }}">{{ row.part.model }}</a>
+            <div class="sub">{{ row.part.name or '' }}</div>{% else %}<span class="muted">已删除物料</span>{% endif %}
+          </td>
+          <td class="num"><span class="badge danger loan-qty">{{ '%g'|format(row.loan.outstanding_qty) }}</span></td>
+          <td class="small">
+            {{ row.loan.borrower or '—' }}
+            <div class="loan-age loan-age-mobile" title="{{ '今天借出' if row.age_days == 0 else '已借出 ' ~ row.age_days ~ ' 天' }}">{{ '今天' if row.age_days == 0 else '未还 ' ~ row.age_days ~ ' 天' }}</div>
+          </td>
+          <td class="small muted col-loc">{{ row.out_loc.code if row.out_loc else '—' }}</td>
+          <td class="small muted nowrap col-time">
+            {{ row.loan.created_at.strftime('%m-%d %H:%M') if row.loan.created_at else '' }}
+            <div class="loan-age">{{ '今天借出' if row.age_days == 0 else '已借出 ' ~ row.age_days ~ ' 天' }}</div>
+          </td>
+          <td class="right nowrap">
+            {% if row.part %}<a class="btn sm danger" href="/stock/scan?mode=return&amp;part_id={{ row.part.id }}">{{ icon('scan') }}扫码归还</a>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2>{{ icon('alert') }}低库存提醒</h2>
+      <a class="small" href="/parts?low=1">查看全部 →</a>
+    </div>
+    {% if low %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>型号</th><th>库位</th><th class="num">库存</th><th class="num">安全库存</th></tr></thead>
+        <tbody>
+        {% for p in low %}
+          <tr>
+            <td><a class="model" href="/parts/{{ p.id }}">{{ p.model }}</a><div class="sub">{{ p.name or '' }}</div></td>
+            <td class="small muted" title="{{ p._loc_full }}">{{ p._loc_summary or '未分配' }}</td>
+            <td class="num"><span class="badge danger">{{ '%g'|format(p._qty) }}</span></td>
+            <td class="num">{{ '%g'|format(p.min_stock) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><div class="big">{{ icon('check') }}</div>没有低库存物料</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>{{ icon('stock') }}最近流水</h2>
+      <a class="small" href="/stock">全部流水 →</a>
+    </div>
+    {% if moves %}
+    <div class="table-wrap">
+      <table class="table dashboard-moves">
+        <thead><tr><th>时间</th><th>物料</th><th>类型</th><th class="num">数量</th><th>库位</th></tr></thead>
+        <tbody>
+        {% for row in moves %}
+          <tr>
+            <td class="small muted nowrap">{{ row.m.created_at.strftime('%m-%d %H:%M') }}</td>
+            <td>{% if row.part %}<a class="model" href="/parts/{{ row.part.id }}">{{ row.part.model }}</a>{% else %}-{% endif %}</td>
+            <td>
+              {% if row.m.ref_type == 'stocktake' or row.m.type == 'adjust' %}<span class="badge blue">盘点</span>
+              {% elif row.m.type == 'in' and row.m.ref_type == 'return' %}<span class="badge ok">归还</span>
+              {% elif row.m.type == 'in' %}<span class="badge ok">入库</span>
+              {% elif row.m.type == 'out' and row.m.ref_type == 'loan' %}<span class="badge danger">借出</span>
+              {% elif row.m.type == 'out' %}<span class="badge warn">出库</span>
+              {% elif row.m.type == 'move' %}<span class="badge blue">移库</span>
+              {% else %}<span class="badge">{{ row.m.type }}</span>{% endif %}
+            </td>
+            <td class="num">{% if row.m.type == 'adjust' %}{{ '%+g'|format(row.m.qty) }}{% else %}{{ '%g'|format(row.m.qty) }}{% endif %}</td>
+            <td class="small muted">{{ row.to.code if row.to else (row.from.code if row.from else '') }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><div class="big">{{ icon('stock') }}</div>还没有库存流水</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mt-l">
+  <div class="card-head"><h2>{{ icon('spark') }}快速开始</h2></div>
+  <div class="cards quick-start" style="margin-bottom:0">
+    <div class="stat has-icon">
+      <span class="stat-icon">{{ icon('location') }}</span>
+      <div class="stat-main">
+        <div class="label">1 · 建库位</div>
+        <div class="hint" style="margin:6px 0 10px">先按柜/层/盒建好位置</div>
+        <a class="btn sm" href="/locations">去建库位 {{ icon('arrow-right') }}</a>
+      </div>
+    </div>
+    <div class="stat has-icon">
+      <span class="stat-icon">{{ icon('camera') }}</span>
+      <div class="stat-main">
+        <div class="label">2 · 录物料</div>
+        <div class="hint" style="margin:6px 0 10px">拍照/截图自动识别，或手动新增</div>
+        <a class="btn sm" href="/intake">拍照入库 {{ icon('arrow-right') }}</a>
+      </div>
+    </div>
+    <div class="stat has-icon">
+      <span class="stat-icon">{{ icon('tag') }}</span>
+      <div class="stat-main">
+        <div class="label">3 · 打标签</div>
+        <div class="hint" style="margin:6px 0 10px">贴到料盒/袋子上，扫码可查</div>
+        <a class="btn sm" href="/labels">打印标签 {{ icon('arrow-right') }}</a>
+      </div>
+    </div>
+    <div class="stat has-icon">
+      <span class="stat-icon">{{ icon('upload') }}</span>
+      <div class="stat-main">
+        <div class="label">4 · 导入旧数据</div>
+        <div class="hint" style="margin:6px 0 10px">Excel / BOM 一次导进来</div>
+        <a class="btn sm" href="/import">开始导入 {{ icon('arrow-right') }}</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

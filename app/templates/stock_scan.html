@@ -1,0 +1,882 @@
+{% extends "base.html" %}
+{% block title %}扫码出入库 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>扫码出入库</h1>
+    <p class="sub">手机直接调用摄像头；先扫物品签或立创 C 码，再扫库位签</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/loans">{{ icon('loan') }}借出/未归还</a>
+    <a class="btn" href="/scan">{{ icon('qr') }}扫码查询</a>
+    <button class="btn" type="button" id="phoneScanOpen">{{ icon('phone') }}手机摄像头</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="phoneScanDialog" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="phoneScanTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="phoneScanTitle">手机当扫码枪</h2>
+        <p class="sub">手机和电脑在同一网络，用手机相机扫描下方二维码</p>
+      </div>
+      <button class="modal-close" type="button" id="phoneScanClose" aria-label="关闭">{{ icon('close') }}</button>
+    </div>
+    <div class="phone-pair">
+      <div class="phone-qr"><img src="{{ phone_qr }}" alt="手机扫码配对二维码"></div>
+      <div class="phone-pair-info">
+        <div class="phone-connection" id="phoneScanState"><span class="dot"></span>等待手机连接</div>
+        <p class="small muted">手机打开后，可以直接用摄像头扫描物品签和库位签。配对成功后可以关闭此窗口，扫描结果仍会发送到本页。</p>
+        <div class="phone-url mono">{{ phone_url }}</div>
+        <a class="btn sm" href="{{ phone_url }}" target="_blank" rel="noopener">{{ icon('external') }}在本机打开测试</a>
+      </div>
+    </div>
+    <p class="help">普通 HTTP 下手机浏览器可能禁用实时摄像头，扫码页会自动提供「拍照扫描」，同样能用。</p>
+  </div>
+</div>
+
+<div id="scanApp" data-mode="{{ scan_mode }}" data-phone-token="{{ phone_token }}" data-part-code="{{ initial_part.code if initial_part else '' }}">
+  <div class="grid-side">
+    <div>
+      <div class="card">
+        <div class="card-head">
+          <h2>{{ icon('scan') }}扫码操作</h2>
+          <span class="badge" id="modeLabel">借出</span>
+        </div>
+
+        <div class="scan-modes" id="modeGroup">
+          <button type="button" data-mode="in" class="{{ 'on' if scan_mode == 'in' }}">{{ icon('plus') }}入库</button>
+          <button type="button" data-mode="out" class="{{ 'on' if scan_mode == 'out' }}">{{ icon('minus') }}消耗出库</button>
+          <button type="button" data-mode="borrow" class="{{ 'on' if scan_mode == 'borrow' }}">{{ icon('loan') }}借出（要归还）</button>
+          <button type="button" data-mode="return" class="{{ 'on' if scan_mode == 'return' }}">{{ icon('refresh') }}归还</button>
+        </div>
+        <p class="help" id="modeHint"></p>
+
+        <div class="mobile-scan-camera" id="mobileScanCamera">
+          <div class="mobile-cam-head">
+            <div class="mobile-cam-title">{{ icon('camera') }}摄像头扫码</div>
+            <span class="badge gray" id="mobileCamState" role="status" aria-live="polite">未开启</span>
+          </div>
+          <div class="mobile-cam-wrap" id="mobileCamWrap" hidden>
+            <video id="mobileCamVideo" playsinline muted></video>
+            <div class="phone-camera-frame"></div>
+          </div>
+          <div class="mobile-cam-actions">
+            <button class="btn primary" type="button" id="mobileCamOpen">{{ icon('camera') }}打开摄像头</button>
+            <button class="btn" type="button" id="mobileCamSnap">{{ icon('camera') }}拍照识别</button>
+            <button class="btn" type="button" id="mobileCamStop" hidden>{{ icon('close') }}停止</button>
+          </div>
+          <input type="file" id="mobileCamFile" accept="image/*" capture="environment" hidden>
+          <p class="help" id="mobileCamHint" aria-live="polite">打开后对准物品签或库位签，自动识别。</p>
+        </div>
+
+        <div class="scan-step"><span class="num">1</span>扫物品签</div>
+        <input id="scanInput" class="scan-input" type="text" autocomplete="off"
+               placeholder="扫描或输入物料码 / 型号">
+        <div class="row scanner-gun-only" style="margin-top:8px">
+          <span class="small muted" id="serialState">USB 键盘模式可直接扫</span>
+          <select id="baudRate" style="width:100px; padding:4px 6px">
+            <option value="9600" selected>9600</option>
+            <option value="115200">115200</option>
+            <option value="38400">38400</option>
+            <option value="4800">4800</option>
+          </select>
+          <button class="btn sm" id="serialConnect" type="button">{{ icon('refresh') }}连接串口</button>
+          <button class="btn sm" id="serialDisconnect" type="button" style="display:none">{{ icon('close') }}断开</button>
+        </div>
+        <p class="help mobile-only">没有摄像头或识别不了时，也可以在上方输入框手动输入编码。</p>
+        <div id="partBox" class="scan-target empty">等待扫描物品签</div>
+        <div class="row" id="partResetRow" style="margin-top:8px" hidden>
+          <button class="btn sm" type="button" id="partReset">{{ icon('refresh') }}重新扫描物品</button>
+        </div>
+
+        <div class="scan-step"><span class="num">2</span>扫库位签</div>
+        <div id="locBox" class="scan-target empty">先完成第 1 步</div>
+
+        <div class="form-grid scan-fields">
+          <div class="field">
+            <label>数量</label>
+            <input id="qtyInput" type="number" min="0.0001" step="any" value="1">
+          </div>
+          <div class="field" id="borrowerField" {% if scan_mode != 'borrow' %}style="display:none"{% endif %}>
+            <label>借用人 / 用途</label>
+            <input id="borrowerInput" type="text" placeholder="可选，如 张三 / 项目 A">
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label>备注</label>
+            <input id="noteInput" type="text" placeholder="可选">
+          </div>
+        </div>
+
+        <div id="resultBox" class="scan-result" role="status"></div>
+        <p class="help desktop-only">扫码枪扫完会自动回车。第 2 步扫到库位后会立即执行；数量请在扫库位前确认。</p>
+        <p class="help mobile-only">第 2 步扫到库位后会立即执行；数量请在扫库位前确认。</p>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head">
+          <h2>{{ icon('loan') }}未归还物品</h2>
+          <span class="badge danger" id="openLoanQty">{{ '%g'|format(open_loan_qty) }}</span>
+        </div>
+        <div id="openLoansBox">
+          {% if open_loans %}
+          <div class="table-wrap">
+            <table class="table mobile-cards">
+              <thead><tr><th>物料</th><th class="num">未还</th><th>借出库位</th><th class="right">操作</th></tr></thead>
+              <tbody>
+              {% for row in open_loans %}
+                <tr>
+                  <td class="mc-main">
+                    {% if row.part %}<a class="model" href="/parts/{{ row.part.id }}">{{ row.part.model }}</a>
+                    <div class="sub">{{ row.loan.borrower or '未填写借用人' }}</div>{% else %}<span class="muted">已删除物料</span>{% endif %}
+                  </td>
+                  <td class="num" data-label="未还"><span class="badge danger">{{ '%g'|format(row.loan.outstanding_qty) }}</span></td>
+                  <td class="small muted" data-label="借出库位">{{ row.out_loc.code if row.out_loc else '—' }}</td>
+                  <td class="right mc-actions">
+                    {% if row.part %}<a class="btn sm" href="/stock/scan?mode=return&amp;part_id={{ row.part.id }}">{{ icon('scan') }}归还</a>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty" style="padding:20px"><div class="big">{{ icon('check') }}</div>没有未归还物品</div>
+          {% endif %}
+        </div>
+        <div class="mt"><a class="small" href="/loans">查看全部记录 →</a></div>
+      </div>
+
+      <div class="card mt-l">
+        <div class="card-head"><h2>{{ icon('spark') }}使用提示</h2></div>
+        <ul class="scan-tips">
+          <li class="scanner-gun-only">USB 扫码枪使用键盘模式即可，不需要额外连接。</li>
+          <li><b>入库</b>时可以直接扫立创包装袋上的 C 码（如 <span class="mono">C1525</span>）；扫库位后会自动建档并入库，数量请先确认。</li>
+          <li class="desktop-only">没带扫码枪时，点右上角「手机摄像头」，手机扫码后结果会发送到本页。</li>
+          <li class="mobile-only">手机端直接点「摄像头扫码」，浏览器会调用摄像头；实时摄像头不可用时会改为调用系统相机拍照识别。</li>
+          <li>先扫物品签，再扫库位签；第二次扫描后立即执行。</li>
+          <li>「借出」会减少库存并记录未归还；「归还」把物品放回扫描的库位。</li>
+          <li>「消耗出库」不产生归还记录，适合一次性耗材。</li>
+          <li>同一个物品可以放在任意库位，也可以分布在多个库位。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var app = document.getElementById('scanApp');
+  if (!app) return;
+  var modeGroup = document.getElementById('modeGroup');
+  var modeLabel = document.getElementById('modeLabel');
+  var modeHint = document.getElementById('modeHint');
+  var scanInput = document.getElementById('scanInput');
+  var partBox = document.getElementById('partBox');
+  var partResetRow = document.getElementById('partResetRow');
+  var partReset = document.getElementById('partReset');
+  var locBox = document.getElementById('locBox');
+  var qtyInput = document.getElementById('qtyInput');
+  var borrowerField = document.getElementById('borrowerField');
+  var borrowerInput = document.getElementById('borrowerInput');
+  var noteInput = document.getElementById('noteInput');
+  var resultBox = document.getElementById('resultBox');
+  var openLoansBox = document.getElementById('openLoansBox');
+  var openLoanQty = document.getElementById('openLoanQty');
+  var baudSelect = document.getElementById('baudRate');
+  var serialConnect = document.getElementById('serialConnect');
+  var serialDisconnect = document.getElementById('serialDisconnect');
+  var serialState = document.getElementById('serialState');
+  var serialPort = null;
+  var serialReader = null;
+  var phoneDialog = document.getElementById('phoneScanDialog');
+  var phoneScanOpen = document.getElementById('phoneScanOpen');
+  var phoneScanClose = document.getElementById('phoneScanClose');
+  var phoneScanState = document.getElementById('phoneScanState');
+  var phoneToken = app.dataset.phoneToken || '';
+  var phoneQueue = [];
+  var phoneLastEventId = 0;
+  var phonePollTimer = null;
+
+  var isMobileScan = !!(window.matchMedia && window.matchMedia('(max-width: 820px)').matches);
+  var canLiveCamera = !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  var mobileCam = document.getElementById('mobileScanCamera');
+  var mobileCamWrap = document.getElementById('mobileCamWrap');
+  var mobileVideo = document.getElementById('mobileCamVideo');
+  var mobileCamOpen = document.getElementById('mobileCamOpen');
+  var mobileCamSnap = document.getElementById('mobileCamSnap');
+  var mobileCamStop = document.getElementById('mobileCamStop');
+  var mobileCamFile = document.getElementById('mobileCamFile');
+  var mobileCamState = document.getElementById('mobileCamState');
+  var mobileCamHint = document.getElementById('mobileCamHint');
+  var mobileStream = null;
+  var mobileTimer = null;
+  var mobileBusy = false;
+  var mobileDetector = null;
+  var mobileLastCode = '';
+  var mobileLastAt = 0;
+
+  var MODES = {
+    in: { label: '入库', hint: '扫物品签或立创包装袋上的 C 码，再扫要放入的库位；立创 C 码会自动建档。' },
+    out: { label: '消耗出库', hint: '扫物品签，再扫取出的库位；消耗出库不记录归还。' },
+    borrow: { label: '借出', hint: '扫物品签，再扫取出的库位；系统会标记未归还。' },
+    return: { label: '归还', hint: '扫物品签，再扫归还到的库位；会关闭最早的未归还记录。' }
+  };
+
+  var state = {
+    mode: MODES[app.dataset.mode] ? app.dataset.mode : 'borrow',
+    part: null,
+    location: null,
+    busy: false
+  };
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function fmt(value) {
+    var n = Number(value || 0);
+    return n.toLocaleString('zh-CN', { maximumFractionDigits: 3 });
+  }
+
+  function iconSvg(name) {
+    return '<svg class="icon" aria-hidden="true"><use href="/static/icons.svg#i-' + name + '"></use></svg>';
+  }
+
+  function focusScanInput() {
+    if (!isMobileScan) scanInput.focus();
+  }
+
+  function setMode(mode) {
+    if (!MODES[mode]) mode = 'borrow';
+    state.mode = mode;
+    state.location = null;
+    // 立创 C 码只用于入库；切到出库/借还时丢弃未建档的草稿。
+    if (state.part && state.part.lcsc_draft && mode !== 'in') state.part = null;
+    Array.prototype.forEach.call(modeGroup.querySelectorAll('button[data-mode]'), function (btn) {
+      btn.classList.toggle('on', btn.dataset.mode === mode);
+    });
+    modeLabel.textContent = MODES[mode].label;
+    modeHint.textContent = MODES[mode].hint;
+    borrowerField.style.display = mode === 'borrow' ? '' : 'none';
+    renderPart();
+    renderLocation();
+    showResult('', '');
+    focusScanInput();
+  }
+
+  function setBusy(busy) {
+    state.busy = busy;
+    scanInput.disabled = busy;
+    modeGroup.querySelectorAll('button').forEach(function (btn) { btn.disabled = busy; });
+    if (!busy) {
+      focusScanInput();
+      setTimeout(processPhoneQueue, 0);
+    }
+  }
+
+  function showResult(kind, message) {
+    resultBox.className = 'scan-result' + (kind ? ' ' + kind : '');
+    resultBox.textContent = message || '';
+  }
+
+  function renderPart() {
+    var p = state.part;
+    if (!p) {
+      partBox.className = 'scan-target empty';
+      partBox.textContent = state.mode === 'in' ? '等待扫描物品签或立创 C 码' : '等待扫描物品签';
+      if (partResetRow) partResetRow.hidden = true;
+      scanInput.placeholder = state.mode === 'in'
+        ? '扫描物料签 / 型号 / 立创 C 码（如 C1525）'
+        : '扫描或输入物料码 / 型号';
+      return;
+    }
+    var isDraft = !!p.lcsc_draft;
+    var locs = (p.locations || []).map(function (l) {
+      var label = esc(l.path) + '（' + fmt(l.qty) + '）';
+      return l.id ? '<a href="/locations/' + l.id + '">' + label + '</a>' : label;
+    }).join('、') || '未入库';
+    var meta = [];
+    if (p.code) meta.push(esc(p.code));
+    if (p.lcsc_code) meta.push('立创 ' + esc(p.lcsc_code));
+    if (p.name) meta.push(esc(p.name));
+    if (p.brand) meta.push(esc(p.brand));
+    if (p.package) meta.push(esc(p.package));
+    var open = Number(p.open_qty || 0);
+    partBox.className = 'scan-target';
+    partBox.innerHTML =
+      '<div class="row" style="justify-content:space-between; align-items:flex-start">' +
+        '<div>' + (p.id
+          ? '<a class="model" href="/parts/' + p.id + '">' + esc(p.model) + '</a>'
+          : '<b class="model">' + esc(p.model) + '</b>') +
+          (isDraft ? ' <span class="badge blue">立创新物料</span> <span class="badge gray">待入库</span>' : '') +
+          '<div class="small muted">' + meta.join(' · ') + '</div></div>' +
+        '<div class="right">' + (isDraft ? '' :
+          '<div class="scan-big-num">' + fmt(p.qty) + ' <span class="small muted">' + esc(p.unit || '') + '</span></div>' +
+          '<div class="small ' + (open ? 'danger-text' : 'muted') + '">未归还 ' + fmt(open) + '</div>') +
+        '</div>' +
+      '</div>' +
+      '<div class="small muted mt">' + (isDraft ? '扫库位后自动建档并入库；数量请先确认。' : '所在库位：' + locs) + '</div>';
+    if (partResetRow) partResetRow.hidden = false;
+    scanInput.placeholder = '扫描库位签 / 输入库位编码';
+  }
+
+  function renderLocation() {
+    var l = state.location;
+    if (!l) {
+      locBox.className = 'scan-target empty';
+      locBox.textContent = state.part ? '请扫描库位签' : '先完成第 1 步';
+      return;
+    }
+    locBox.className = 'scan-target';
+    locBox.innerHTML =
+      '<div class="row" style="justify-content:space-between">' +
+        '<div><b>' + esc(l.path) + '</b><div class="small muted">' + esc(l.code) + ' · ' + esc(l.name) + '</div></div>' +
+        '<div class="right small muted">当前 ' + fmt(l.qty) + ' 件 / ' + l.part_count + ' 种</div>' +
+      '</div>';
+  }
+
+  function lookupPart(code) {
+    setBusy(true);
+    fetch('/api/stock-scan/lookup?expect=part&mode=' + encodeURIComponent(state.mode) +
+          '&code=' + encodeURIComponent(code))
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+      .then(function (res) {
+        setBusy(false);
+        if (!res.ok || res.data.error) {
+          showResult('bad', res.data.error || '没有找到这个物品');
+          return;
+        }
+        state.part = res.data.part;
+        state.location = null;
+        renderPart();
+        renderLocation();
+        if (state.part.lcsc_draft) {
+          showResult('ok', '已找到立创 ' + state.part.lcsc_code + '：' + state.part.model +
+            '；扫库位后自动建档入库，数量请先确认。');
+        } else if (state.mode === 'return' && Number(state.part.open_qty || 0) <= 0) {
+          showResult('bad', '该物品没有未归还记录；如需归还请先确认物品和借出记录。');
+        } else {
+          showResult('', '');
+        }
+        scanInput.value = '';
+        if (mobileCamHint) mobileCamHint.textContent = state.part.lcsc_draft
+          ? '已识别立创 C 码，请设置数量后扫描库位签。'
+          : '已识别物品，请继续扫描库位签。';
+        focusScanInput();
+      })
+      .catch(function () {
+        setBusy(false);
+        showResult('bad', '查询失败，请重试');
+      });
+  }
+
+  function lookupLocation(code) {
+    if (state.mode === 'return' && state.part && Number(state.part.open_qty || 0) <= 0) {
+      showResult('bad', '该物品没有未归还记录，不能归还。');
+      return;
+    }
+    setBusy(true);
+    fetch('/api/stock-scan/lookup?expect=location&code=' + encodeURIComponent(code))
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+      .then(function (res) {
+        if (!res.ok || res.data.error) {
+          setBusy(false);
+          showResult('bad', res.data.error || '没有找到这个库位');
+          return;
+        }
+        state.location = res.data.location;
+        renderLocation();
+        setBusy(false);
+        execute();
+      })
+      .catch(function () {
+        setBusy(false);
+        showResult('bad', '查询失败，请重试');
+      });
+  }
+
+  function execute() {
+    if (!state.part || !state.location || state.busy) return;
+    var qty = Number(qtyInput.value);
+    if (!isFinite(qty) || qty <= 0) {
+      showResult('bad', '数量必须大于 0');
+      qtyInput.focus();
+      return;
+    }
+    var body = new URLSearchParams();
+    body.set('action', state.mode);
+    body.set('part_id', state.part.id || '');
+    body.set('lcsc_code', state.part.lcsc_code || '');
+    body.set('location_id', state.location.id);
+    body.set('qty', String(qty));
+    body.set('borrower', borrowerInput.value || '');
+    body.set('note', noteInput.value || '');
+    setBusy(true);
+    showResult('', '正在执行…');
+    fetch('/api/stock-scan/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: body.toString()
+    })
+      .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+      .then(function (res) {
+        setBusy(false);
+        if (!res.ok || res.data.error) {
+          showResult('bad', res.data.error || '操作失败');
+          state.location = null;
+          renderLocation();
+          focusScanInput();
+          return;
+        }
+        showResult('ok', res.data.message || '操作成功');
+        updateOpenBadge(res.data.open_loan_count);
+        refreshOpenLoans();
+        state.part = null;
+        state.location = null;
+        renderPart();
+        renderLocation();
+        qtyInput.value = '1';
+        noteInput.value = '';
+        scanInput.value = '';
+        if (mobileCamHint) mobileCamHint.textContent = '操作成功，请扫描下一件物品签。';
+        focusScanInput();
+      })
+      .catch(function () {
+        setBusy(false);
+        showResult('bad', '操作失败，请重试');
+        state.location = null;
+        renderLocation();
+      });
+  }
+
+  function handleScan(value) {
+    var code = String(value || '').trim();
+    if (!code || state.busy) return;
+    scanInput.value = '';
+    if (!state.part) {
+      lookupPart(code);
+    } else if (!state.location) {
+      lookupLocation(code);
+    }
+  }
+
+  function setMobileCamState(kind, text) {
+    if (!mobileCamState) return;
+    mobileCamState.className = 'badge ' + (kind || 'gray');
+    mobileCamState.textContent = text || '';
+  }
+
+  function acceptMobileCode(code) {
+    var value = String(code || '').trim();
+    if (!value) return;
+    var now = Date.now();
+    if (value === mobileLastCode && now - mobileLastAt < 8000) return;
+    if (state.part && String(state.part.code || state.part.lcsc_code || '') === value) return;
+    if (state.busy) return;
+    mobileLastCode = value;
+    mobileLastAt = now;
+    if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+    if (mobileCamHint) mobileCamHint.textContent = '已识别：' + value;
+    handleScan(value);
+  }
+
+  function decodeMobileBlob(blob, silent) {
+    if (!blob) { mobileBusy = false; return; }
+    mobileBusy = true;
+    if (!silent) {
+      setMobileCamState('gray', '识别中');
+      if (mobileCamHint) mobileCamHint.textContent = '正在识别二维码/条码…';
+    }
+    var fd = new FormData();
+    fd.append('file', blob, 'camera_scan.jpg');
+    fetch('/api/decode-code', { method: 'POST', body: fd })
+      .then(function (r) {
+        return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+      })
+      .then(function (res) {
+        mobileBusy = false;
+        if (res.ok && res.data && res.data.code) {
+          setMobileCamState('ok', '已识别');
+          acceptMobileCode(res.data.code);
+          return;
+        }
+        if (!silent) {
+          setMobileCamState('danger', '未识别');
+          if (mobileCamHint) mobileCamHint.textContent = (res.data && res.data.error) || '没有识别到条码，请靠近标签再拍一次。';
+        }
+      })
+      .catch(function () {
+        mobileBusy = false;
+        if (!silent) {
+          setMobileCamState('danger', '识别失败');
+          if (mobileCamHint) mobileCamHint.textContent = '识别请求失败，请检查网络后重试。';
+        }
+      });
+  }
+
+  function captureMobileFrame() {
+    if (!mobileStream || mobileBusy || !mobileVideo || !mobileVideo.videoWidth) return;
+    var width = mobileVideo.videoWidth;
+    var height = mobileVideo.videoHeight;
+    var scale = Math.min(1, 960 / Math.max(width, height));
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    canvas.getContext('2d').drawImage(mobileVideo, 0, 0, canvas.width, canvas.height);
+    mobileBusy = true;
+    canvas.toBlob(function (blob) {
+      decodeMobileBlob(blob, true);
+    }, 'image/jpeg', 0.78);
+  }
+
+  function stopMobileCamera() {
+    if (mobileTimer) { clearInterval(mobileTimer); mobileTimer = null; }
+    if (mobileStream) {
+      mobileStream.getTracks().forEach(function (track) { track.stop(); });
+      mobileStream = null;
+    }
+    if (mobileVideo) mobileVideo.srcObject = null;
+    if (mobileCamWrap) {
+      mobileCamWrap.hidden = true;
+      mobileCamWrap.classList.remove('on');
+    }
+    if (mobileCamOpen) { mobileCamOpen.hidden = false; mobileCamOpen.disabled = false; }
+    if (mobileCamStop) mobileCamStop.hidden = true;
+    if (mobileCamSnap) mobileCamSnap.hidden = !canLiveCamera;
+    mobileBusy = false;
+    setMobileCamState('gray', '已停止');
+    if (mobileCamHint) mobileCamHint.textContent = '已停止摄像头，可重新打开或用下方输入框手动输入。';
+  }
+
+  function startMobileCamera() {
+    if (!canLiveCamera) {
+      if (mobileCamFile) mobileCamFile.click();
+      return;
+    }
+    if (mobileStream || !mobileVideo) return;
+    if (mobileCamOpen) mobileCamOpen.disabled = true;
+    setMobileCamState('gray', '打开中');
+    if (mobileCamHint) mobileCamHint.textContent = '正在请求摄像头权限…';
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then(function (stream) {
+        mobileStream = stream;
+        mobileVideo.srcObject = stream;
+        return mobileVideo.play();
+      })
+      .then(function () {
+        if (mobileCamWrap) {
+          mobileCamWrap.hidden = false;
+          mobileCamWrap.classList.add('on');
+        }
+        if (mobileCamOpen) mobileCamOpen.hidden = true;
+        if (mobileCamStop) mobileCamStop.hidden = false;
+        if (mobileCamSnap) mobileCamSnap.hidden = false;
+        setMobileCamState('ok', '扫描中');
+        if (mobileCamHint) mobileCamHint.textContent = '对准物品签或库位签，识别成功会自动处理。';
+        if ('BarcodeDetector' in window) {
+          try {
+            mobileDetector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'ean_13', 'code_39'] });
+            mobileTimer = setInterval(function () {
+              if (!mobileStream || mobileBusy) return;
+              mobileBusy = true;
+              mobileDetector.detect(mobileVideo)
+                .then(function (codes) {
+                  mobileBusy = false;
+                  if (codes && codes.length) acceptMobileCode(codes[0].rawValue);
+                })
+                .catch(function () { mobileBusy = false; });
+            }, 450);
+          } catch (e) {
+            mobileTimer = setInterval(captureMobileFrame, 1300);
+          }
+        } else {
+          mobileTimer = setInterval(captureMobileFrame, 1300);
+        }
+      })
+      .catch(function () {
+        if (mobileStream) {
+          mobileStream.getTracks().forEach(function (track) { track.stop(); });
+          mobileStream = null;
+        }
+        if (mobileCamOpen) mobileCamOpen.disabled = false;
+        setMobileCamState('danger', '打开失败');
+        if (mobileCamHint) mobileCamHint.textContent = '摄像头打开失败，请允许权限；也可以点「拍照识别」或手动输入。';
+      });
+  }
+
+  function openMobileCamera() {
+    if (!mobileCam) return;
+    if (mobileCam.scrollIntoView) mobileCam.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!canLiveCamera) {
+      if (mobileCamFile) mobileCamFile.click();
+      return;
+    }
+    startMobileCamera();
+  }
+
+  function initMobileCamera() {
+    if (!isMobileScan || !mobileCam) return;
+    if (phoneScanOpen) phoneScanOpen.innerHTML = iconSvg('camera') + '摄像头扫码';
+    if (!canLiveCamera) {
+      if (mobileCamOpen) mobileCamOpen.innerHTML = iconSvg('camera') + '调用手机相机';
+      if (mobileCamSnap) mobileCamSnap.hidden = true;
+      if (mobileCamHint) mobileCamHint.textContent = '当前是局域网 HTTP，实时摄像头不可用。点击按钮会打开手机相机，拍照后自动识别。';
+    }
+  }
+
+  function updateOpenBadge(count) {
+    document.querySelectorAll('.js-open-loan-badge').forEach(function (badge) {
+      badge.textContent = String(count || 0);
+      badge.style.display = count ? '' : 'none';
+    });
+  }
+
+  function setPhoneStatus(online, message) {
+    if (!phoneScanState) return;
+    phoneScanState.classList.toggle('online', !!online);
+    phoneScanState.innerHTML = '<span class="dot"></span>' + esc(message);
+  }
+
+  function processPhoneQueue() {
+    if (!phoneQueue.length || state.busy) return;
+    var code = phoneQueue.shift();
+    handleScan(code);
+  }
+
+  function pollPhoneScans() {
+    if (!phoneToken) return;
+    var keepPolling = true;
+    fetch('/api/scan-phone/' + encodeURIComponent(phoneToken) + '/next?after=' + phoneLastEventId)
+      .then(function (r) {
+        return r.json().then(function (data) { return { ok: r.ok, status: r.status, data: data }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          if (res.status === 404) {
+            keepPolling = false;
+            setPhoneStatus(false, '配对已失效，请刷新本页');
+          }
+          return;
+        }
+        var events = res.data.events || [];
+        events.forEach(function (ev) {
+          if (Number(ev.id) > phoneLastEventId) phoneLastEventId = Number(ev.id);
+          if (ev.code) phoneQueue.push(ev.code);
+        });
+        if (events.length) {
+          setPhoneStatus(true, '已连接 · 收到 ' + events[events.length - 1].code);
+          processPhoneQueue();
+        } else {
+          setPhoneStatus(!!res.data.online, res.data.online ? '手机已连接，等待扫描' : '等待手机连接');
+        }
+      })
+      .catch(function () {})
+      .then(function () {
+        if (keepPolling) phonePollTimer = setTimeout(pollPhoneScans, 700);
+      });
+  }
+
+  function openPhoneDialog() {
+    if (!phoneDialog) return;
+    phoneDialog.hidden = false;
+    document.body.classList.add('modal-open');
+    if (!phonePollTimer) pollPhoneScans();
+  }
+
+  function closePhoneDialog() {
+    if (!phoneDialog) return;
+    phoneDialog.hidden = true;
+    document.body.classList.remove('modal-open');
+  }
+
+  if (phoneScanOpen) {
+    phoneScanOpen.addEventListener('click', function () {
+      if (isMobileScan && mobileCam) {
+        openMobileCamera();
+        return;
+      }
+      openPhoneDialog();
+    });
+  }
+  if (phoneScanClose) phoneScanClose.addEventListener('click', closePhoneDialog);
+  if (phoneDialog) {
+    phoneDialog.addEventListener('click', function (e) {
+      if (e.target === phoneDialog) closePhoneDialog();
+    });
+  }
+  if (mobileCamOpen) mobileCamOpen.addEventListener('click', openMobileCamera);
+  if (mobileCamStop) mobileCamStop.addEventListener('click', stopMobileCamera);
+  if (mobileCamSnap) {
+    mobileCamSnap.addEventListener('click', function () {
+      if (mobileStream) captureMobileFrame();
+      else if (mobileCamFile) mobileCamFile.click();
+    });
+  }
+  if (mobileCamFile) {
+    mobileCamFile.addEventListener('change', function () {
+      var file = mobileCamFile.files && mobileCamFile.files[0];
+      if (!file) return;
+      decodeMobileBlob(file, false);
+      mobileCamFile.value = '';
+    });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && phoneDialog && !phoneDialog.hidden) closePhoneDialog();
+  });
+
+  function refreshOpenLoans() {
+    fetch('/api/loans/open?limit=12')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        updateOpenBadge(data.count);
+        if (openLoanQty) openLoanQty.textContent = fmt(data.qty);
+        if (!openLoansBox) return;
+        if (!data.loans || !data.loans.length) {
+          openLoansBox.innerHTML = '<div class="empty" style="padding:20px"><div class="big">' + iconSvg('check') + '</div>没有未归还物品</div>';
+          return;
+        }
+        var rows = data.loans.map(function (l) {
+          var part = l.part_id
+            ? '<a class="model" href="/parts/' + l.part_id + '">' + esc(l.model) + '</a><div class="sub">' + esc(l.borrower || '未填写借用人') + '</div>'
+            : '<span class="muted">已删除物料</span>';
+          var action = l.part_id
+            ? '<a class="btn sm" href="/stock/scan?mode=return&amp;part_id=' + l.part_id + '">' + iconSvg('scan') + '归还</a>'
+            : '';
+          return '<tr><td class="mc-main">' + part + '</td><td class="num" data-label="未还"><span class="badge danger">' + fmt(l.outstanding) +
+            '</span></td><td class="small muted" data-label="借出库位">' + esc(l.out_location || '—') + '</td><td class="right mc-actions">' + action + '</td></tr>';
+        }).join('');
+        openLoansBox.innerHTML = '<div class="table-wrap"><table class="table mobile-cards"><thead><tr><th>物料</th><th class="num">未还</th><th>借出库位</th><th class="right">操作</th></tr></thead><tbody>' +
+          rows + '</tbody></table></div>';
+      })
+      .catch(function () {});
+  }
+
+  async function connectSerial() {
+    if (!('serial' in navigator)) {
+      serialState.textContent = '当前地址不支持串口（需本机地址或 HTTPS）';
+      return;
+    }
+    serialState.textContent = '请在弹窗中选择设备…';
+    try {
+      serialPort = await navigator.serial.requestPort();
+      await serialPort.open({
+        baudRate: parseInt(baudSelect.value, 10) || 9600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none'
+      });
+      serialState.textContent = '串口已连接 ' + baudSelect.value;
+      serialState.className = 'small';
+      serialConnect.style.display = 'none';
+      serialDisconnect.style.display = '';
+      readSerial();
+    } catch (err) {
+      serialState.textContent = 'USB 键盘模式可直接扫';
+      serialPort = null;
+    }
+  }
+
+  async function readSerial() {
+    var decoder = new TextDecoder();
+    var buf = '';
+    while (serialPort && serialPort.readable) {
+      serialReader = serialPort.readable.getReader();
+      try {
+        while (true) {
+          var r = await serialReader.read();
+          if (r.done) break;
+          buf += decoder.decode(r.value, { stream: true });
+          var lines = buf.split(/[\r\n]+/);
+          buf = lines.pop() || '';
+          for (var i = 0; i < lines.length; i++) {
+            if (lines[i].trim()) handleScan(lines[i]);
+          }
+        }
+      } catch (err) {
+        break;
+      } finally {
+        if (serialReader) {
+          try { serialReader.releaseLock(); } catch (err2) {}
+          serialReader = null;
+        }
+      }
+    }
+  }
+
+  async function disconnectSerial() {
+    try { if (serialReader) await serialReader.cancel(); } catch (err) {}
+    await new Promise(function (resolve) { setTimeout(resolve, 100); });
+    try { if (serialPort) await serialPort.close(); } catch (err) {}
+    serialPort = null;
+    serialReader = null;
+    serialState.textContent = 'USB 键盘模式可直接扫';
+    serialState.className = 'small muted';
+    serialConnect.style.display = '';
+    serialDisconnect.style.display = 'none';
+  }
+
+  serialConnect.addEventListener('click', connectSerial);
+  serialDisconnect.addEventListener('click', disconnectSerial);
+
+  if (partReset) {
+    partReset.addEventListener('click', function () {
+      state.part = null;
+      state.location = null;
+      scanInput.value = '';
+      renderPart();
+      renderLocation();
+      showResult('', '');
+      focusScanInput();
+    });
+  }
+
+  modeGroup.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-mode]');
+    if (btn) setMode(btn.dataset.mode);
+  });
+
+  scanInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleScan(scanInput.value);
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target && e.target.tagName) || '';
+    if (e.target === scanInput || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+    if (e.key === 'Enter') {
+      handleScan(scanInput.value);
+      return;
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      scanInput.value += e.key;
+    }
+  });
+
+  initMobileCamera();
+  setMode(state.mode);
+  if (phoneToken) pollPhoneScans();
+  window.addEventListener('beforeunload', function () {
+    stopMobileCamera();
+    if (phoneToken && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/scan-phone/' + encodeURIComponent(phoneToken) + '/close');
+    }
+  });
+
+  var initialCode = app.dataset.partCode;
+  if (initialCode) {
+    lookupPart(initialCode);
+  } else {
+    focusScanInput();
+  }
+})();
+</script>
+{% endblock %}

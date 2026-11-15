@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}库存盘点 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>库存盘点</h1>
+    <p class="sub">按实际数量修正账面库存，每次调整都会写入库存流水</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/stock">{{ icon('stock') }}库存流水</a>
+    <a class="btn primary" href="/stock/scan">{{ icon('scan') }}扫码出入库</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head search-head">
+    <h2>{{ icon('filter') }}盘点范围</h2>
+    <form class="row" method="get" action="/stocktake">
+      <select name="location_id" style="min-width:210px">
+        <option value="">全部库位</option>
+        {% for l in locations %}
+        <option value="{{ l.id }}" {{ 'selected' if location_id == (l.id|string) else '' }}>{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="q" value="{{ q }}" placeholder="型号 / 名称 / 编码" style="width:200px">
+      <label class="inline"><input type="checkbox" name="include_children" value="1" {{ 'checked' if include_children != '0' else '' }}> 包含下级库位</label>
+      <button class="btn sm primary" type="submit">{{ icon('search') }}开始盘点</button>
+      {% if location_id or q %}<a class="btn sm" href="/stocktake">{{ icon('close') }}清除筛选</a>{% endif %}
+    </form>
+  </div>
+  <p class="help">选择库位后默认包含全部下级库位。盘点只修正批次数量，不会改变库位、批次号、日期码或单价。页面只列出账面数量大于 0 的批次；发现系统里完全没有的库存，请先扫码入库或新增物料。</p>
+</div>
+
+<div class="cards">
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('archive') }}</span>
+    <div class="stat-main"><div class="label">待盘点批次</div><div class="value">{{ rows|length }}</div></div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('stock') }}</span>
+    <div class="stat-main"><div class="label">账面总数</div><div class="value">{{ '%g'|format(total_qty) }}</div></div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('location') }}</span>
+    <div class="stat-main"><div class="label">盘点范围</div><div class="value">{{ '全部库位' if not location_id else '指定库位' }}</div></div>
+  </div>
+</div>
+
+{% if truncated %}
+<div class="flash bad">{{ icon('alert') }}<span>结果超过 {{ max_rows }} 个批次，只显示前 {{ max_rows }} 个；请缩小库位范围或使用搜索。</span></div>
+{% endif %}
+
+<div class="card mt-l">
+  <div class="card-head"><h2>{{ icon('check') }}填写实际数量</h2><span class="badge">{{ rows|length }} 个批次</span></div>
+  {% if rows %}
+  <form method="post" action="/stocktake/apply">
+    <input type="hidden" name="location_id" value="{{ location_id }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="include_children" value="{{ include_children }}">
+    <div class="table-wrap">
+      <table class="table mobile-cards">
+        <thead>
+          <tr><th>物料</th><th>库位</th><th>批次 / 日期码</th><th class="num">单价</th><th class="num">账面数量</th><th class="num">实际数量</th></tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="mc-main">
+              <input type="hidden" name="lot_id" value="{{ r.lot.id }}">
+              <a class="model" href="/parts/{{ r.part.id }}">{{ r.part.model }}</a>
+              <div class="sub">{{ r.part.name or '' }} · <span class="mono">{{ r.part.code }}</span></div>
+            </td>
+            <td class="small muted" data-label="库位">{{ r.loc }}</td>
+            <td class="small" data-label="批次">
+              <span class="mono">{{ r.lot.lot_no or '—' }}</span>
+              <div class="sub">{{ r.lot.date_code or '无日期码' }}</div>
+            </td>
+            <td class="num" data-label="单价">{{ '%g'|format(r.lot.unit_price) if r.lot.unit_price is not none else '—' }}</td>
+            <td class="num" data-label="账面数量"><b>{{ '%g'|format(r.lot.qty or 0) }}</b></td>
+            <td class="num" data-label="实际数量">
+              <input type="number" name="actual" step="any" min="0" required style="width:120px;text-align:right"
+                     value="{{ '%g'|format(r.lot.qty or 0) }}" aria-label="{{ r.part.model }} 实际数量">
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="form-grid mt">
+      <div class="field full">
+        <label>盘点备注</label>
+        <input type="text" name="note" maxlength="200" placeholder="如：2026-10 月度盘点 / 货架整理后复核">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ icon('check') }}提交盘点结果</button>
+      <a class="btn" href="/stocktake">取消</a>
+    </div>
+    <p class="help">只有实际数量与账面数量不同的批次会生成盘点调整流水。盘点不会删除批次，实际数量为 0 时批次保留但库存归零。</p>
+  </form>
+  {% else %}
+  <div class="empty"><div class="big">{{ icon('archive') }}</div>当前范围内没有可盘点的库存批次</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}{{ part.model }} · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="row">
+      <h1>{{ part.model }}</h1>
+      {% if part.status == 'archived' %}<span class="badge gray">已归档</span>{% endif %}
+      {% if part._low %}<span class="badge danger">低库存</span>{% endif %}
+      {% if part._open_loan_qty %}<span class="badge danger">未归还 {{ '%g'|format(part._open_loan_qty) }}</span>{% endif %}
+    </div>
+    <p class="sub">{{ part.name or '—' }} · <span class="mono">{{ part.code }}</span>{% if category %} · {{ category.name }}{% endif %}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/parts/{{ part.id }}/edit">{{ icon('edit') }}修改属性</a>
+    <a class="btn" href="/labels?ids={{ part.id }}">{{ icon('tag') }}打印标签</a>
+    <form method="post" action="/parts/{{ part.id }}/delete" data-confirm="确定删除「{{ part.model }}」？库存和流水也会一起删除，无法恢复。如果有未归还借出，需要先归还。">
+      <button class="btn danger" type="submit">{{ icon('trash') }}删除</button>
+    </form>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('archive') }}</span>
+    <div class="stat-main">
+      <div class="label">当前库存</div>
+      <div class="value {{ 'danger' if part._low else '' }}">{{ '%g'|format(part._qty) }}</div>
+      <div class="hint">{{ part.unit or 'PCS' }}</div>
+    </div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('location') }}</span>
+    <div class="stat-main">
+      <div class="label">所在库位</div>
+      <div class="value" style="font-size:18px; margin-top:8px" title="{{ part._loc_full }}">{{ part._loc_summary or '未入库' }}</div>
+      <div class="hint">库位不固定，可自由选择</div>
+    </div>
+  </div>
+  <div class="stat has-icon stat-loan {{ 'has-loans' if part._open_loan_qty else '' }}">
+    <span class="stat-icon">{{ icon('loan') }}</span>
+    <div class="stat-main">
+      <div class="label">未归还</div>
+      <div class="value {{ 'danger' if part._open_loan_qty else '' }}" style="font-size:22px; margin-top:4px">{{ '%g'|format(part._open_loan_qty or 0) }}</div>
+      <div class="hint">借出未还数量</div>
+    </div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('alert') }}</span>
+    <div class="stat-main">
+      <div class="label">安全库存</div>
+      <div class="value" style="font-size:22px; margin-top:4px">{{ '%g'|format(part.min_stock or 0) }}</div>
+      <div class="hint">{{ '低于安全线' if part._low else '库存正常' }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid-side">
+  <div>
+    <div class="card">
+      <div class="card-head">
+        <h2>{{ icon('file') }}档案信息</h2>
+        <a class="btn sm" href="/parts/{{ part.id }}/edit">{{ icon('edit') }}修改属性</a>
+      </div>
+      <div class="kv">
+        <div class="k">型号</div><div>{{ part.model }}</div>
+        <div class="k">名称</div><div>{{ part.name or '—' }}</div>
+        <div class="k">品牌</div><div>{{ part.brand or '—' }}</div>
+        <div class="k">封装</div><div>{{ part.package or '—' }}</div>
+        <div class="k">分类</div><div>{{ category.name if category else '未分类' }}</div>
+        <div class="k">主供应商</div><div>{{ supplier.name if supplier else '—' }}</div>
+        <div class="k">供应商料号</div><div class="mono">{{ part.supplier_part_no or '—' }}</div>
+        <div class="k">购买链接</div><div>{% if part.purchase_url %}<a href="{{ part.purchase_url }}" target="_blank" rel="noopener">打开链接 {{ icon('external') }}</a>{% else %}—{% endif %}</div>
+        <div class="k">数据手册</div><div>{% if part.datasheet_url %}<a href="{{ part.datasheet_url }}" target="_blank" rel="noopener">查看 {{ icon('external') }}</a>{% else %}—{% endif %}</div>
+        <div class="k">参数</div><div style="white-space:pre-wrap">{{ part.attributes or '—' }}<div class="mt"><a class="small" href="/parts/{{ part.id }}/edit#attributes">修改参数</a></div></div>
+        <div class="k">备注</div><div style="white-space:pre-wrap">{{ part.note or '—' }}</div>
+        <div class="k">更新时间</div><div class="small muted">{{ part.updated_at.strftime('%Y-%m-%d %H:%M') if part.updated_at else '' }}</div>
+      </div>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('box') }}库存批次</h2><span class="badge">{{ lots|length }} 批</span></div>
+      {% if lots %}
+      <div class="table-wrap">
+        <table class="table mobile-cards">
+          <thead><tr><th>库位</th><th class="num">数量</th><th>批次 / 日期码</th><th class="num">单价</th><th>入库时间</th></tr></thead>
+          <tbody>
+          {% for row in lots %}
+            <tr>
+              <td class="small mc-main"><a href="/locations/{{ row.loc.id }}">{{ row.path }}</a></td>
+              <td class="num" data-label="数量"><span class="badge ok">{{ '%g'|format(row.lot.qty) }}</span></td>
+              <td class="small" data-label="批次 / 日期码">{{ row.lot.lot_no or '—' }}{% if row.lot.date_code %} · {{ row.lot.date_code }}{% endif %}</td>
+              <td class="num small" data-label="单价">{{ ('¥' + '%g'|format(row.lot.unit_price)) if row.lot.unit_price else '—' }}</td>
+              <td class="small muted" data-label="入库时间">{{ row.lot.received_at.strftime('%Y-%m-%d') if row.lot.received_at else '' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty" style="padding:18px">还没有库存，右侧入库</div>
+      {% endif %}
+    </div>
+
+    {% if part_loans %}
+    <div class="card mt-l" style="border-color:#fecaca">
+      <div class="card-head">
+        <h2>{{ icon('loan') }}未归还借出 <span class="badge danger">{{ part_loans|length }}</span></h2>
+        <a class="small" href="/stock/scan?mode=return&amp;part_id={{ part.id }}">扫码归还 →</a>
+      </div>
+      <div class="table-wrap">
+        <table class="table mobile-cards">
+          <thead><tr><th class="num">未还</th><th>借用人</th><th>借出库位</th><th>借出时间</th><th class="right">操作</th></tr></thead>
+          <tbody>
+          {% for row in part_loans %}
+            <tr>
+              <td class="num" data-label="未还"><span class="badge danger">{{ '%g'|format(row.loan.outstanding_qty) }}</span></td>
+              <td class="small" data-label="借用人">{{ row.loan.borrower or '—' }}</td>
+              <td class="small muted" data-label="借出库位">{{ row.out_loc.code if row.out_loc else '—' }}</td>
+              <td class="small muted nowrap" data-label="借出时间">{{ row.loan.created_at.strftime('%Y-%m-%d %H:%M') if row.loan.created_at else '' }}</td>
+              <td class="right mc-actions"><a class="btn sm" href="/stock/scan?mode=return&amp;part_id={{ part.id }}">{{ icon('scan') }}归还</a></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('stock') }}库存流水</h2><span class="badge">{{ moves|length }} 条</span></div>
+      {% if moves %}
+      <div class="table-wrap">
+        <table class="table mobile-cards">
+          <thead><tr><th>时间</th><th>类型</th><th class="num">数量</th><th>库位</th><th>备注</th></tr></thead>
+          <tbody>
+          {% for row in moves %}
+            <tr>
+              <td class="small muted nowrap" data-label="时间">{{ row.m.created_at.strftime('%m-%d %H:%M') }}</td>
+              <td data-label="类型">{% if row.m.ref_type == 'stocktake' or row.m.type == 'adjust' %}<span class="badge blue">盘点</span>{% elif row.m.ref_type == 'loan' %}<span class="badge danger">借出</span>{% elif row.m.ref_type == 'return' %}<span class="badge ok">归还</span>{% elif row.m.type == 'in' %}<span class="badge ok">入库</span>{% elif row.m.type == 'out' %}<span class="badge warn">出库</span>{% elif row.m.type == 'move' %}<span class="badge blue">移库</span>{% else %}<span class="badge">{{ row.m.type }}</span>{% endif %}</td>
+              <td class="num" data-label="数量">{% if row.m.type == 'adjust' %}{{ '%+g'|format(row.m.qty) }}{% else %}{{ '%g'|format(row.m.qty) }}{% endif %}</td>
+              <td class="small muted" data-label="库位">{{ row.to.code if row.to else (row.from.code if row.from else '—') }}</td>
+              <td class="small muted" data-label="备注">{{ row.m.note or '' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty" style="padding:18px">暂无流水</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('scan') }}出入库</h2><a class="small" href="/stock/scan?part_id={{ part.id }}">扫码操作 →</a></div>
+      <form method="post" action="/parts/{{ part.id }}/stock">
+        <div class="form-grid" style="grid-template-columns:1fr">
+          <div class="field">
+            <label>数量</label>
+            <input type="number" step="any" name="qty" required placeholder="0">
+          </div>
+          <div class="field">
+            <label>库位（可任意选择）</label>
+            <select name="location_id">
+              <option value="">{{ '使用常用库位（' ~ part._default_loc ~ '）' if part.default_location_id and part._default_loc else '— 请选择库位 —' }}</option>
+              {% for l in locations %}
+              <option value="{{ l.id }}">{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px">
+            <div class="field">
+              <label>批次</label>
+              <input type="text" name="lot_no" placeholder="可选">
+            </div>
+            <div class="field">
+              <label>单价</label>
+              <input type="number" step="any" name="price" placeholder="元">
+            </div>
+          </div>
+          <div class="field">
+            <label>日期码（入库时使用）</label>
+            <input type="text" name="date_code" placeholder="如 2026-10-21">
+          </div>
+          <div class="field">
+            <label>备注</label>
+            <input type="text" name="note" placeholder="如 淘宝到货 / 项目领用">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" type="submit" name="action" value="in">{{ icon('plus') }}入库</button>
+          <button class="btn" type="submit" name="action" value="out">{{ icon('minus') }}出库</button>
+        </div>
+      </form>
+      <p class="help mt">要归还的物品请用「扫码操作」选择借出/归还，系统会记录未归还。</p>
+    </div>
+
+    <div class="card mt-l lcsc-widget" data-lcsc-widget data-lcsc-mode="server"
+         data-lcsc-apply-url="/parts/{{ part.id }}/lcsc">
+      <div class="card-head">
+        <h2>{{ icon('spark') }}立创商城资料</h2>
+        <span class="badge gray">联网 · 按需查询</span>
+      </div>
+      <p class="small muted">按当前型号搜索相似器件。默认只补空；不会改动库存、库位、批次和实际入库单价。</p>
+      <div class="lcsc-search-row">
+        <input type="text" data-lcsc-query value="{{ part.model or part.name or '' }}" placeholder="型号 / 名称 / C 码">
+        <button type="button" class="btn primary" data-lcsc-search>{{ icon('search') }}搜索相似器件</button>
+      </div>
+      <div class="lcsc-filter-row">
+        <input type="text" data-lcsc-package value="{{ part.package or '' }}" placeholder="封装（可选）">
+        <input type="text" data-lcsc-brand value="{{ part.brand or '' }}" placeholder="品牌（可选）">
+        <label class="inline small"><input type="checkbox" data-lcsc-instock checked> 只看有库存</label>
+        <button type="button" class="btn sm" data-lcsc-clear>{{ icon('refresh') }}清空</button>
+      </div>
+      <div class="small muted lcsc-status" data-lcsc-status>点搜索后选择候选器件；C 码会精确匹配。</div>
+      <div class="lcsc-results" data-lcsc-results></div>
+      <div class="lcsc-selected" data-lcsc-selected hidden></div>
+      <form method="post" action="/parts/{{ part.id }}/lcsc" data-lcsc-apply-form>
+        <input type="hidden" name="code" data-lcsc-code>
+        <input type="hidden" name="mode" data-lcsc-mode-input value="blank">
+      </form>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('external') }}多来源 / 购买链接</h2></div>
+      {% if sources %}
+      <div class="list">
+        {% for s in sources %}
+        <div class="list-item">
+          <div class="top">
+            <b class="small">{{ supplier_map.get(s.supplier_id, '其他') }}</b>
+            {% if s.price %}<span class="badge">{% if s.note and '参考' in s.note %}参考 {% endif %}¥{{ '%g'|format(s.price) }}</span>{% endif %}
+          </div>
+          <div class="small muted">{{ s.supplier_part_no or '' }}</div>
+          {% if s.note %}<div class="small muted">{{ s.note }}</div>{% endif %}
+          {% if s.url %}<a class="small" href="{{ s.url }}" target="_blank" rel="noopener">购买链接 {{ icon('external') }}</a>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted small">还没有附加来源，可在下面添加淘宝/立创链接。</p>
+      {% endif %}
+      <form method="post" action="/parts/{{ part.id }}/source" class="mt">
+        <div class="form-grid" style="grid-template-columns:1fr; gap:10px">
+          <div class="field">
+            <label>供应商</label>
+            <select name="supplier_id">
+              {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>链接</label>
+            <input type="url" name="url" placeholder="https://...">
+          </div>
+          <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px">
+            <div class="field"><label>料号</label><input type="text" name="supplier_part_no"></div>
+            <div class="field"><label>价格</label><input type="number" step="any" name="price"></div>
+          </div>
+        </div>
+        <div class="form-actions"><button class="btn sm" type="submit">{{ icon('plus') }}添加来源</button></div>
+      </form>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('camera') }}图片 / 截图</h2></div>
+      <div class="gallery">
+        {% if part.image_path %}<a href="/uploads/{{ part.image_path }}" target="_blank"><img src="/uploads/{{ part.image_path }}" alt="物料图"></a>{% endif %}
+        {% for a in attachments %}<a href="/uploads/{{ a.path }}" target="_blank"><img src="/uploads/{{ a.path }}" alt="{{ a.kind }}"></a>{% endfor %}
+      </div>
+      {% if not part.image_path and not attachments %}<p class="muted small">暂无图片</p>{% endif %}
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('qr') }}物料码</h2></div>
+      <div class="row">
+        <img src="/qr/{{ part.code }}.png" alt="QR" style="width:96px;height:96px;border:1px solid var(--line);border-radius:8px">
+        <div>
+          <div class="mono small">{{ part.code }}</div>
+          <div class="help">扫码枪扫这个码会输入物料编号，可在搜索框直接查到。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/lcsc.js?v={{ static_version }}"></script>
+{% endblock %}

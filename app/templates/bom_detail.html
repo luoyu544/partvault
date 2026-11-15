@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · BOM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small muted"><a href="/bom">BOM 核对</a> / {{ project.name }}</p>
+    <h1>{{ project.name }}</h1>
+    <p class="sub">{{ rows|length }} 行 · 已匹配 {{ matched }} 行 · 缺料 {{ short }} 行</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="/bom/{{ project.id }}/out" data-confirm="按这份 BOM 批量出库？库存不足的行会自动跳过。">
+      <button class="btn primary" type="submit">{{ icon('minus') }}按 BOM 出库</button>
+    </form>
+    <form method="post" action="/bom/{{ project.id }}/delete" data-confirm="删除 BOM「{{ project.name }}」？">
+      <button class="btn danger" type="submit">{{ icon('trash') }}删除</button>
+    </form>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('bom') }}</span>
+    <div class="stat-main"><div class="label">BOM 行数</div><div class="value">{{ rows|length }}</div></div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('check') }}</span>
+    <div class="stat-main"><div class="label">已匹配物料</div><div class="value">{{ matched }}</div></div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('archive') }}</span>
+    <div class="stat-main"><div class="label">库存足够</div><div class="value">{{ rows|length - short }}</div></div>
+  </div>
+  <div class="stat has-icon">
+    <span class="stat-icon">{{ icon('alert') }}</span>
+    <div class="stat-main"><div class="label">缺料 / 未匹配</div><div class="value {{ 'danger' if short else '' }}">{{ short }}</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head"><h2>{{ icon('file') }}明细</h2></div>
+  <div class="table-wrap">
+    <table class="table mobile-cards">
+      <thead><tr><th>型号 / 料号</th><th class="num">需求</th><th class="num">库存</th><th>状态</th><th>物料</th><th>手动匹配</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="mc-main"><span class="model">{{ r.item.model }}</span><div class="sub">{{ r.item.designators or '—' }}</div></td>
+          <td class="num" data-label="需求">{{ '%g'|format(r.item.qty or 0) }}</td>
+          <td class="num" data-label="库存">{{ '%g'|format(r.stock) }}</td>
+          <td data-label="状态">
+            {% if not r.part %}<span class="badge gray">未匹配</span>
+            {% elif r.ok %}<span class="badge ok">足够</span>
+            {% else %}<span class="badge danger">缺 {{ '%g'|format((r.item.qty or 0) - r.stock) }}</span>{% endif %}
+          </td>
+          <td data-label="物料">{% if r.part %}<a href="/parts/{{ r.part.id }}">{{ r.part.model }}</a><div class="sub">{{ r.part.code }}</div>{% else %}—{% endif %}</td>
+          <td data-label="手动匹配">
+            <form method="post" action="/bom/{{ project.id }}/items/{{ r.item.id }}/match" class="row">
+              <input type="text" name="part_query" list="bomPartList" style="width:160px"
+                     value="{{ r.part.code if r.part else '' }}" placeholder="编码 / 型号 / 料号" autocomplete="off">
+              <button class="btn sm" type="submit">{{ icon('check') }}{{ '更换' if r.part else '指定' }}</button>
+            </form>
+            {% if r.part %}
+            <form method="post" action="/bom/{{ project.id }}/items/{{ r.item.id }}/unmatch" class="mt">
+              <button class="btn sm ghost" type="submit">{{ icon('close') }}取消匹配</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <datalist id="bomPartList">
+    {% for p in parts %}
+    <option value="{{ p.code }}">{{ p.model }}{% if p.name %} · {{ p.name }}{% endif %}{% if p.supplier_part_no %} · {{ p.supplier_part_no }}{% endif %}</option>
+    {% endfor %}
+  </datalist>
+  <p class="help mt">未匹配行可以直接在右侧输入物料编码、型号或供应商料号后点「指定」。也可以先补货或新增物料，再回来匹配；BOM 行不会因为补货自动改变。</p>
+</div>
+{% endblock %}

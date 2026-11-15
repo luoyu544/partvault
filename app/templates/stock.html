@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}库存流水 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>库存流水</h1>
+    <p class="sub">每一次入库、出库都有记录，可按物料搜索</p>
+  </div>
+  <div class="actions">
+    <a class="btn primary" href="/stock/scan">{{ icon('scan') }}扫码出入库</a>
+    <a class="btn" href="/stocktake">{{ icon('check') }}库存盘点</a>
+    <a class="btn" href="/loans">{{ icon('loan') }}借出/未归还</a>
+    <a class="btn" href="/parts?low=1">{{ icon('alert') }}低库存清单</a>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-head"><h2>{{ icon('archive') }}入库</h2></div>
+    <form method="post" action="/stock/in">
+      <div class="form-grid stock-form" style="grid-template-columns:1fr 1fr; gap:12px">
+        <div class="field full">
+          <label>物料 <span class="req">*</span></label>
+          <select name="part_id" required>
+            <option value="">— 选择物料 —</option>
+            {% for p in parts %}
+            <option value="{{ p.id }}">{{ p.model }}（{{ p.code }}） · 库存 {{ '%g'|format(p._qty) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>数量 <span class="req">*</span></label><input type="number" step="any" name="qty" required placeholder="0"></div>
+        <div class="field"><label>库位（可任意选择）</label>
+          <select name="location_id"><option value="">使用常用库位 / 请选择</option>
+            {% for l in locations %}<option value="{{ l.id }}">{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>批次</label><input type="text" name="lot_no" placeholder="可选"></div>
+        <div class="field"><label>日期码</label><input type="text" name="date_code" placeholder="如 2026-10-21"></div>
+        <div class="field"><label>单价</label><input type="number" step="any" name="price" placeholder="元"></div>
+        <div class="field full"><label>备注</label><input type="text" name="note" placeholder="如 淘宝到货 / 立创订单"></div>
+      </div>
+      <div class="form-actions"><button class="btn primary" type="submit">{{ icon('plus') }}确认入库</button></div>
+    </form>
+    <p class="help mt">库位不绑定物料，可自由选择；留空时使用该物料的常用库位。</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>{{ icon('box') }}出库</h2></div>
+    <form method="post" action="/stock/out">
+      <div class="form-grid stock-form" style="grid-template-columns:1fr 1fr; gap:12px">
+        <div class="field full">
+          <label>物料 <span class="req">*</span></label>
+          <select name="part_id" required>
+            <option value="">— 选择物料 —</option>
+            {% for p in parts %}
+            <option value="{{ p.id }}">{{ p.model }}（{{ p.code }}） · 库存 {{ '%g'|format(p._qty) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>数量 <span class="req">*</span></label><input type="number" step="any" name="qty" required placeholder="0"></div>
+        <div class="field"><label>从哪个库位出</label>
+          <select name="location_id"><option value="">按先进先出</option>
+            {% for l in locations %}<option value="{{ l.id }}">{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field full"><label>备注</label><input type="text" name="note" placeholder="如 项目领用 / 送样"></div>
+      </div>
+      <div class="form-actions"><button class="btn" type="submit">{{ icon('minus') }}确认出库</button></div>
+    </form>
+    <p class="help mt">出库默认按批次先进先出；也可以指定从某个库位扣。要归还的物品请用「扫码出入库」的借出模式，系统会记录未归还。</p>
+  </div>
+</div>
+
+<div class="card mt-l">
+  <div class="card-head search-head">
+    <h2>{{ icon('stock') }}流水记录</h2>
+    <form class="row" method="get" action="/stock">
+      <input type="text" name="q" value="{{ q }}" placeholder="按型号/名称/编号搜索" style="width:240px">
+      <button class="btn sm" type="submit">{{ icon('search') }}搜索</button>
+      {% if q %}<a class="btn sm" href="/stock">{{ icon('close') }}清除</a>{% endif %}
+    </form>
+  </div>
+  {% if moves %}
+  <div class="table-wrap">
+    <table class="table mobile-cards stock-table">
+      <thead><tr><th>时间</th><th>物料</th><th>类型</th><th class="num">数量</th><th>库位</th><th>来源</th><th>备注</th></tr></thead>
+      <tbody>
+      {% for row in moves %}
+        <tr>
+          <td class="small muted nowrap" data-label="时间">{{ row.m.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="mc-main" data-label="">{% if row.part %}<a class="model" href="/parts/{{ row.part.id }}">{{ row.part.model }}</a><div class="sub">{{ row.part.code }}</div>{% endif %}</td>
+          <td data-label="类型">{% if row.m.ref_type == 'stocktake' or row.m.type == 'adjust' %}<span class="badge blue">盘点</span>{% elif row.m.ref_type == 'loan' %}<span class="badge danger">借出</span>{% elif row.m.ref_type == 'return' %}<span class="badge ok">归还</span>{% elif row.m.type == 'in' %}<span class="badge ok">入库</span>{% elif row.m.type == 'out' %}<span class="badge warn">出库</span>{% elif row.m.type == 'move' %}<span class="badge blue">移库</span>{% else %}<span class="badge">{{ row.m.type }}</span>{% endif %}</td>
+          <td class="num" data-label="数量">{% if row.m.type == 'adjust' %}{{ '%+g'|format(row.m.qty) }}{% else %}{{ '%g'|format(row.m.qty) }}{% endif %}</td>
+          <td class="small muted" data-label="库位">{% if row.m.type == 'move' and row.from and row.to %}{{ row.from.code }} → {{ row.to.code }}{% elif row.to %}{{ row.to.code }}{% elif row.from %}{{ row.from.code }}{% else %}—{% endif %}</td>
+          <td class="small muted" data-label="来源">{{ {'loan':'借出','return':'归还','scan':'扫码','stocktake':'盘点'}.get(row.m.ref_type, row.m.ref_type) }}</td>
+          <td class="small muted" data-label="备注">{{ row.m.note or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty"><div class="big">{{ icon('stock') }}</div>还没有流水</div>
+  {% endif %}
+</div>
+{% endblock %}

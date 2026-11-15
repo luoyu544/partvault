@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}物料库 · {{ site_name }}{% endblock %}
+{% macro pager(position='') %}
+{% if pages > 1 %}
+<div class="pagination {{ position }}">
+  {% if page > 1 %}<a href="{{ page_url(page-1) }}" aria-label="上一页">{{ icon('chevron-left') }}</a>{% endif %}
+  {% for p in range(1, pages + 1) %}
+    {% if p == 1 or p == pages or (p >= page - 2 and p <= page + 2) %}
+      {% if p == page %}<span class="cur">{{ p }}</span>{% else %}<a href="{{ page_url(p) }}">{{ p }}</a>{% endif %}
+    {% elif p == 2 or p == pages - 1 %}
+      <span>…</span>
+    {% endif %}
+  {% endfor %}
+  <span class="page-info">第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a href="{{ page_url(page+1) }}" aria-label="下一页">{{ icon('chevron-right') }}</a>{% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>物料库</h1>
+    <p class="sub">共 {{ total }} 种物料{% if low %}（低库存筛选）{% endif %}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/import">{{ icon('upload') }}导入 Excel</a>
+    <a class="btn" href="/labels">{{ icon('tag') }}标签</a>
+    <a class="btn primary" href="/parts/new">{{ icon('plus') }}新增物料</a>
+  </div>
+</div>
+
+{{ pager('top') }}
+
+<form class="filters" action="/parts" method="get">
+  <input class="grow" type="text" name="q" value="{{ q }}" placeholder="型号 / 名称 / 料号 / 编号 / 品牌">
+  <select name="category">
+    <option value="">全部分类</option>
+    {% for c in categories %}
+    <option value="{{ c.id }}" {{ 'selected' if category|string == c.id|string }}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="location">
+    <option value="">全部库位</option>
+    {% for l in locations %}
+    <option value="{{ l.id }}" {{ 'selected' if location|string == l.id|string }}>{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>
+    {% endfor %}
+  </select>
+  <label class="inline small"><input type="checkbox" name="low" value="1" {{ 'checked' if low }}> 只看低库存</label>
+  <button class="btn primary" type="submit">{{ icon('filter') }}筛选</button>
+  <a class="btn" href="/parts">{{ icon('refresh') }}重置</a>
+</form>
+
+{% if parts %}
+<form method="post" action="/labels/pdf" id="bulkForm">
+  <div class="card" style="padding:0">
+    <div class="table-wrap">
+      <table class="table parts-table">
+        <thead>
+          <tr>
+            <th style="width:34px"><input type="checkbox" id="checkAll" title="全选"></th>
+            <th>型号 / 名称</th>
+            <th>分类</th>
+            <th>库位</th>
+            <th class="num">库存</th>
+            <th>封装</th>
+            <th>品牌</th>
+            <th>更新时间</th>
+            <th class="right">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in parts %}
+          <tr>
+            <td class="cell-check"><input type="checkbox" name="ids" value="{{ p.id }}"></td>
+            <td class="cell-main">
+              <a class="model" href="/parts/{{ p.id }}">{{ p.model }}</a>
+              {% if p._open_loan_qty %}<span class="badge danger" title="借出未还">未还 {{ '%g'|format(p._open_loan_qty) }}</span>{% endif %}
+              <div class="sub">{{ p.name or '—' }} {% if p.supplier_part_no %}<span class="mono">· {{ p.supplier_part_no }}</span>{% endif %}</div>
+            </td>
+            <td class="small cell-hide" data-label="分类">{{ cat_map.get(p.category_id, '—') }}</td>
+            <td class="small muted" data-label="库位" title="{{ p._loc_full }}">{{ p._loc_summary or '未分配' }}</td>
+            <td class="num" data-label="库存">
+              {% if p._low %}<span class="badge danger" title="低于安全库存">{{ '%g'|format(p._qty) }}</span>
+              {% elif p._qty > 0 %}<span class="badge ok">{{ '%g'|format(p._qty) }}</span>
+              {% else %}<span class="badge gray">0</span>{% endif %}
+            </td>
+            <td class="small" data-label="封装">{{ p.package or '—' }}</td>
+            <td class="small cell-hide" data-label="品牌">{{ p.brand or '—' }}</td>
+            <td class="small muted nowrap cell-hide" data-label="更新时间">{{ p.updated_at.strftime('%Y-%m-%d') if p.updated_at else '' }}</td>
+            <td class="right nowrap cell-actions">
+              <a class="btn sm" href="/parts/{{ p.id }}">{{ icon('file') }}详情</a>
+              <a class="btn sm" href="/labels?ids={{ p.id }}">{{ icon('tag') }}标签</a>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="row mt" style="justify-content:space-between">
+    <div class="muted small">勾选物料后可批量打印标签</div>
+    <div class="row">
+      <button class="btn" type="submit" formaction="/labels/pdf" data-label-submit>{{ icon('printer') }}A4 PDF</button>
+      <button class="btn" type="submit" formaction="/labels/sef" data-label-submit>{{ icon('tag') }}Supvan 50×30</button>
+    </div>
+  </div>
+</form>
+
+{{ pager() }}
+
+{% else %}
+<div class="card">
+  <div class="empty">
+    <div class="big">{{ icon('parts') }}</div>
+    {% if q or category or location or low %}没有符合条件的物料{% else %}还没有物料，先建第一个吧{% endif %}
+    <div class="mt"><a class="btn primary" href="/parts/new">{{ icon('plus') }}新增物料</a> <a class="btn" href="/import">{{ icon('upload') }}从 Excel 导入</a></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}修改库位属性 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="row">
+      <h1>修改库位属性</h1>
+      {% if is_temp %}<span class="badge gray">临时库位</span>{% endif %}
+    </div>
+    <p class="sub"><span class="mono">{{ loc.code }}</span> · {{ loc.name }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/locations/{{ loc.id }}">{{ icon('chevron-left') }}取消</a>
+  </div>
+</div>
+
+<form method="post" action="/locations/{{ loc.id }}/edit">
+  <div class="grid-side">
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>{{ icon('location') }}库位属性</h2></div>
+        <div class="form-grid">
+          <div class="field">
+            <label>编码 <span class="req">*</span></label>
+            <input type="text" name="code" required maxlength="60" value="{{ form.code }}"
+                   {% if is_temp %}readonly{% endif %} autocomplete="off">
+            {% if is_temp %}
+            <p class="help">临时库位编码固定为 <span class="mono">{{ temp_location_code }}</span>，不能修改。</p>
+            {% else %}
+            <p class="help">编码用于扫码和标签；修改后旧标签将无法识别，请按需重新打印。</p>
+            {% endif %}
+          </div>
+          <div class="field">
+            <label>类型</label>
+            <select name="kind">
+              <option value="warehouse" {{ 'selected' if form.kind == 'warehouse' else '' }}>仓库</option>
+              <option value="cabinet" {{ 'selected' if form.kind == 'cabinet' else '' }}>柜</option>
+              <option value="shelf" {{ 'selected' if form.kind == 'shelf' else '' }}>层</option>
+              <option value="box" {{ 'selected' if form.kind == 'box' else '' }}>盒</option>
+              <option value="cell" {{ 'selected' if form.kind == 'cell' else '' }}>格</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>名称</label>
+            <input type="text" name="name" maxlength="120" value="{{ form.name }}"
+                   placeholder="留空则与编码相同" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>上级库位</label>
+            <select name="parent_id" {% if is_temp %}disabled{% endif %}>
+              <option value="">（顶级仓库）</option>
+              {% for l in locations %}
+              <option value="{{ l.id }}" {{ 'selected' if form.parent_id == (l.id|string) else '' }}>{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>
+              {% endfor %}
+            </select>
+            {% if is_temp %}
+            <input type="hidden" name="parent_id" value="{{ form.parent_id }}">
+            <p class="help">临时库位的上级保持原样。</p>
+            {% else %}
+            <p class="help">可以调整层级；不能选择自己或自己的下级库位。</p>
+            {% endif %}
+          </div>
+          <div class="field full">
+            <label>备注</label>
+            <textarea name="note" placeholder="存放说明、位置提示等">{{ form.note }}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit">{{ icon('check') }}保存修改</button>
+        <a class="btn" href="/locations/{{ loc.id }}">{{ icon('chevron-left') }}取消</a>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>{{ icon('layers') }}说明</h2></div>
+        <p class="small muted">这里只修改库位档案，不会移动物料、批次或流水。</p>
+        <p class="small muted mt">调整上级库位会改变库位树和汇总数量，库位里的物料仍然留在原库位。</p>
+        <p class="small muted mt">如果要移动库位里的物料，请回到库位详情页使用「批量移出」。</p>
+        {% if is_temp %}
+        <p class="small muted mt">临时库位用于承接被删除库位里的物料，本身不能删除；可以修改名称、类型和备注。</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

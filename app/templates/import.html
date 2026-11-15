@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}数据导入 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>数据导入</h1>
+    <p class="sub">把现有 Excel / CSV / BOM 一次导进来，自动匹配表头，导入后直接入库</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/import/template">{{ icon('download') }}下载导入模板</a>
+  </div>
+</div>
+
+{% if result %}
+<div class="card">
+  <div class="card-head"><h2>{{ icon('check') }}导入结果</h2></div>
+  <div class="cards">
+    <div class="stat"><div class="label">新建物料</div><div class="value">{{ result.created }}</div></div>
+    <div class="stat"><div class="label">匹配已有</div><div class="value">{{ result.matched }}</div></div>
+    <div class="stat"><div class="label">入库行数</div><div class="value">{{ result.stocked }}</div></div>
+    <div class="stat"><div class="label">跳过</div><div class="value">{{ result.skipped }}</div></div>
+  </div>
+  {% if result.errors %}
+  <div class="flash bad" style="margin-top:14px">
+    <b>{{ icon('alert') }}有 {{ result.errors|length }} 行失败：</b>
+    <div class="small" style="margin-top:6px">{{ result.errors|join('；') }}</div>
+  </div>
+  {% endif %}
+  {% if result.warnings %}
+  <div class="flash warn" style="margin-top:14px">
+    <b>{{ icon('alert') }}有 {{ result.warnings|length }} 条提示：</b>
+    <div class="small" style="margin-top:6px">{{ result.warnings|join('；') }}</div>
+  </div>
+  {% endif %}
+  <div class="form-actions">
+    <a class="btn primary" href="/parts">{{ icon('parts') }}查看物料库</a>
+    <a class="btn" href="/import">{{ icon('refresh') }}再导一个文件</a>
+  </div>
+</div>
+
+{% elif file_name %}
+<div class="card">
+  <div class="card-head">
+    <h2>{{ icon('file') }}2 · 确认列对应关系</h2>
+    <span class="badge blue">{{ total_rows }} 行数据</span>
+  </div>
+  <p class="small muted" style="margin-bottom:12px">系统已自动猜列，请核对。留空的列表示不导入。</p>
+
+  <form method="post" action="/import/commit">
+    <input type="hidden" name="file_name" value="{{ file_name }}">
+    {% set fields = [
+      ('supplier_part_no','供应商料号'), ('model','型号'), ('name','名称/描述'),
+      ('brand','品牌'), ('package','封装'), ('qty','数量'),
+      ('price','单价'), ('lot_no','批次'), ('date_code','日期码'), ('location_code','库位编码')
+    ] %}
+    <div class="form-grid">
+      {% for key, label in fields %}
+      <div class="field">
+        <label>{{ label }}</label>
+        <select name="map_{{ key }}">
+          <option value="">— 不导入 —</option>
+          {% for h in headers %}
+          <option value="{{ loop.index0 }}" {{ 'selected' if mapping.get(key) == loop.index0 }}>{{ h }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+      <div class="field">
+        <label>入库到哪个库位 <span class="req">*</span></label>
+        <select name="location_id" required>
+          <option value="">— 选择库位 —</option>
+          {% for l in locations %}<option value="{{ l.id }}">{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>供应商（可选）</label>
+        <select name="supplier_id">
+          <option value="">不指定</option>
+          {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="card-head mt-l"><h2>{{ icon('file') }}数据预览（前 8 行）</h2></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in preview %}
+          <tr>{% for v in row %}<td class="small">{{ v }}</td>{% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ icon('check') }}开始导入</button>
+      <a class="btn" href="/import">{{ icon('refresh') }}重新选择文件</a>
+    </div>
+  </form>
+</div>
+
+{% else %}
+<div class="grid-side">
+  <div class="card">
+    <div class="card-head"><h2>{{ icon('upload') }}上传文件</h2><span class="badge">.xlsx / .xls / .csv</span></div>
+    <form method="post" action="/import/preview" enctype="multipart/form-data">
+      <div class="dropzone" onclick="this.querySelector('input').click()">
+        <div class="big">{{ icon('upload') }}</div>
+        <p><b>点击选择 Excel / CSV</b></p>
+        <p class="small">支持嘉立创 BOM、淘宝订单导出、自己整理的表格</p>
+        <input type="file" name="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="this.form.submit()">
+      </div>
+    </form>
+    <p class="help mt">上传后先预览并确认列，不会立刻写库。</p>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('search') }}自动识别的列</h2></div>
+      <div class="small muted" style="line-height:1.9">
+        料号、型号、规格、名称、品牌、封装、数量、单价、批次、日期码、库位。<br>
+        常见表头（如 <span class="mono">Supplier Part</span>、<span class="mono">Comment</span>、
+        <span class="mono">Footprint</span>、<span class="mono">Quantity</span>）会自动对应。
+      </div>
+    </div>
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('spark') }}导入规则</h2></div>
+      <ul class="small muted" style="margin:0; padding-left:18px; line-height:1.9">
+        <li>先按「供应商料号」匹配已有物料，再按「型号」匹配。</li>
+        <li>匹配不到就新建；已有物料只补空字段，不覆盖。</li>
+        <li>数量 &gt; 0 会生成一条入库流水。</li>
+        <li>如果表里有「库位编码」，优先入到该库位；否则入到你选的库位。</li>
+        <li>同名多行会分别累加库存。</li>
+      </ul>
+    </div>
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('archive') }}现有数据</h2></div>
+      <p class="small muted">桌面的 <span class="mono">元件数据.xlsx</span>、BOM 文件都可以直接上传。先备份一份原文件更稳妥。</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

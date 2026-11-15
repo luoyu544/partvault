@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}库位 · {{ site_name }}{% endblock %}
+{% macro render_tree(nodes, depth) %}
+  {% for l in nodes %}
+  {% set kids = children.get(l.id, []) %}
+  <div class="tree-node" data-location-node="{{ l.id }}">
+    <div class="tree-row" style="padding-left: {{ 8 + depth * 18 }}px">
+      <input type="checkbox" class="tree-check" name="ids" value="{{ l.id }}" data-check-item="locations" data-check-tree
+             aria-label="选择库位 {{ l.code }}"
+             {% if l.code|lower == temp_location_code|lower %}disabled title="临时库位不能删除"{% endif %}>
+      {% if kids %}
+      <button type="button" class="tree-toggle" data-tree-toggle aria-expanded="true" aria-controls="treeChildren{{ l.id }}" title="收起/展开 {{ l.code }} 的子库位">{{ icon('chevron-right') }}</button>
+      {% else %}
+      <span class="tree-toggle tree-toggle-empty" aria-hidden="true"></span>
+      {% endif %}
+      <a class="code" href="/locations/{{ l.id }}">{{ l.code }}</a>
+      <span class="small tree-name">{{ l.name }}</span>
+      {% if l.code|lower == temp_location_code|lower %}<span class="badge warn">临时</span>{% endif %}
+      <span class="spacer"></span>
+      <span class="badge" title="含子库位的物料种类数">{{ counts.get(l.id, 0) }} 种</span>
+      <span class="badge gray" title="含子库位的总数量">{{ '%g'|format(qty.get(l.id, 0)) }}</span>
+      <a class="btn sm tree-qr" href="/qr.png?data={{ ('PV-L-' ~ l.code)|urlencode }}" target="_blank" title="库位二维码" aria-label="打开库位 {{ l.code }} 的二维码">{{ icon('qr') }}</a>
+      <a class="btn sm tree-open" href="/locations/{{ l.id }}" title="打开库位" aria-label="打开库位 {{ l.code }}">{{ icon('chevron-right') }}</a>
+    </div>
+    {% if kids %}
+    <div class="tree-children" id="treeChildren{{ l.id }}" data-tree-children>
+      {{ render_tree(kids, depth + 1) }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% endmacro %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>库位</h1>
+    <p class="sub">建议按「仓库 → 柜 → 层 → 盒」建立；批量新建可用连续编号一次生成整层</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/location-labels">{{ icon('tag') }}打印库位标签</a>
+  </div>
+</div>
+
+<div class="grid-side">
+  <div class="card">
+    <div class="card-head"><h2>{{ icon('location') }}库位树</h2><span class="badge">{{ locs|length }} 个库位</span></div>
+    {% if locs %}
+    <form method="post" action="/locations/batch-delete" id="locationBatchDeleteForm"
+          data-confirm="确定删除所选库位？有库存的物料会移到临时库位 {{ temp_location_code }}，删除后不可恢复。"
+          data-require-checked="locations" data-check-message="请先勾选要删除的库位">
+      <div class="tree-tools">
+        <label class="tree-jump">
+          {{ icon('search') }}
+          <select data-location-jump aria-label="快速定位库位">
+            <option value="">快速定位库位…</option>
+            {% for l in locations %}
+            <option value="{{ l.id }}">{{ '　' * l.depth }}{% if l.code|lower == temp_location_code|lower %}[临时] {% endif %}{{ l.code }} · {{ l.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="tree-expand-actions">
+          <button class="btn sm" type="button" data-tree-expand>展开全部</button>
+          <button class="btn sm" type="button" data-tree-collapse>收起全部</button>
+        </div>
+      </div>
+      <div class="tree" data-location-tree>
+        {{ render_tree(children.get(none, []), 0) }}
+      </div>
+      <div class="tree-batch-bar">
+        <label class="check-inline"><input type="checkbox" data-check-all="locations"> 全选</label>
+        <span class="help" data-check-count="locations">已选 0 个</span>
+        <span class="spacer"></span>
+        <span class="help tree-delete-note">有库存的物料会先移到 {{ temp_location_code }} 临时库位</span>
+        <button class="btn danger" type="submit">{{ icon('trash') }}删除所选</button>
+      </div>
+    </form>
+    <p class="help mt">右侧数字为含子库位的「物料种类数 / 总数量」；点编码进入库位详情。勾选上级库位会自动选中它的全部子库位；取消任一子库位时，上级库位会自动取消，避免把整个父库位一起删除。</p>
+    {% else %}
+    <div class="empty"><div class="big">{{ icon('location') }}</div>还没有库位，先在右侧新建</div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head location-create-head">
+        <h2>{{ icon('plus') }}新建库位</h2>
+        <div class="tabs location-create-tabs" role="tablist" aria-label="新建方式">
+          <button type="button" class="{{ 'on' if open_tab != 'batch' }}" data-location-tab="single" role="tab" id="locationTabSingle" aria-controls="locationPanelSingle" aria-selected="{{ 'true' if open_tab != 'batch' else 'false' }}">单个</button>
+          <button type="button" class="{{ 'on' if open_tab == 'batch' }}" data-location-tab="batch" role="tab" id="locationTabBatch" aria-controls="locationPanelBatch" aria-selected="{{ 'true' if open_tab == 'batch' else 'false' }}">批量</button>
+        </div>
+      </div>
+
+      <div class="location-create-panel" id="locationPanelSingle" data-location-panel="single" role="tabpanel" aria-labelledby="locationTabSingle" {% if open_tab == 'batch' %}hidden{% endif %}>
+        <form method="post" action="/locations/new">
+          <div class="form-grid" style="grid-template-columns:1fr; gap:12px">
+            <div class="field">
+              <label>上级库位</label>
+              <select name="parent_id">
+                <option value="">（顶级仓库）</option>
+                {% for l in locations %}
+                <option value="{{ l.id }}" {{ 'selected' if (single_parent_id|string) == (l.id|string) else '' }}>{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px">
+              <div class="field">
+                <label>编码 <span class="req">*</span></label>
+                <input type="text" name="code" required maxlength="60" value="{{ single_code }}" placeholder="A-01" autocomplete="off">
+              </div>
+              <div class="field">
+                <label>类型</label>
+                <select name="kind">
+                  <option value="warehouse" {{ 'selected' if single_kind == 'warehouse' else '' }}>仓库</option>
+                  <option value="cabinet" {{ 'selected' if single_kind == 'cabinet' else '' }}>柜</option>
+                  <option value="shelf" {{ 'selected' if single_kind == 'shelf' else '' }}>层</option>
+                  <option value="box" {{ 'selected' if single_kind == 'box' else '' }}>盒</option>
+                  <option value="cell" {{ 'selected' if single_kind == 'cell' else '' }}>格</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label>名称</label>
+              <input type="text" name="name" maxlength="120" value="{{ single_name }}" placeholder="留空则与编码相同" autocomplete="off">
+            </div>
+            <div class="field">
+              <label>备注</label>
+              <textarea name="note" placeholder="可选">{{ single_note }}</textarea>
+            </div>
+          </div>
+          <div class="form-actions"><button class="btn primary" type="submit">{{ icon('plus') }}新建库位</button></div>
+        </form>
+      </div>
+
+      <div class="location-create-panel" id="locationPanelBatch" data-location-panel="batch" role="tabpanel" aria-labelledby="locationTabBatch" {% if open_tab != 'batch' %}hidden{% endif %}>
+        <form method="post" action="/locations/batch" id="batchLocationForm">
+          <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px">
+            <div class="field">
+              <label>上级库位</label>
+              <select name="parent_id" id="batchParent">
+                <option value="">（顶级仓库）</option>
+                {% for l in locations %}
+                <option value="{{ l.id }}" {{ 'selected' if (batch_parent_id|string) == (l.id|string) else '' }}>{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label>类型</label>
+              <select name="kind">
+                <option value="warehouse" {{ 'selected' if batch_kind == 'warehouse' else '' }}>仓库</option>
+                <option value="cabinet" {{ 'selected' if batch_kind == 'cabinet' else '' }}>柜</option>
+                <option value="shelf" {{ 'selected' if batch_kind == 'shelf' else '' }}>层</option>
+                <option value="box" {{ 'selected' if batch_kind == 'box' else '' }}>盒</option>
+                <option value="cell" {{ 'selected' if batch_kind == 'cell' else '' }}>格</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field mt">
+            <label>库位清单 <span class="req">*</span></label>
+            <textarea name="codes" id="batchCodes" class="batch-location-text" rows="8" required maxlength="50000" placeholder="A-01&#10;A-02,第二层&#10;A-03,第三层">{{ batch_codes }}</textarea>
+            <p class="help">每行一个；可用「编码,名称」，只写编码时名称=编码。空行和 # 开头的行会忽略，一次最多 200 个。</p>
+          </div>
+
+          <details class="batch-generator">
+            <summary>{{ icon('spark') }}连续编号快速生成</summary>
+            <div class="form-grid batch-generator-grid">
+              <div class="field">
+                <label>编码前缀</label>
+                <input type="text" id="genPrefix" placeholder="例如 A-" autocomplete="off">
+              </div>
+              <div class="field">
+                <label>名称模板（可选）</label>
+                <input type="text" id="genName" placeholder="例如 第{n}层；{code}=完整编码" autocomplete="off">
+              </div>
+              <div class="field">
+                <label>起始序号</label>
+                <input type="number" id="genStart" value="1" min="0" step="1">
+              </div>
+              <div class="field">
+                <label>结束序号</label>
+                <input type="number" id="genEnd" value="8" min="0" step="1">
+              </div>
+              <div class="field">
+                <label>序号位数</label>
+                <input type="number" id="genWidth" value="2" min="1" max="6" step="1">
+              </div>
+            </div>
+            <div class="form-actions batch-generator-actions">
+              <button type="button" class="btn" data-generate-locations>{{ icon('spark') }}生成并替换清单</button>
+              <span class="help">生成后仍可手动修改清单</span>
+            </div>
+          </details>
+
+          <div class="form-actions">
+            <button class="btn primary" type="submit">{{ icon('plus') }}批量新建</button>
+            <span class="help batch-count" data-batch-count>每行一个，最多 200 个</span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('spark') }}编码建议</h2></div>
+      <div class="small muted" style="line-height:1.9">
+        仓库：<span class="mono">W1</span><br>
+        柜：<span class="mono">A</span>、<span class="mono">B</span><br>
+        层：<span class="mono">A-01</span>、<span class="mono">A-02</span><br>
+        盒/格：<span class="mono">A-02-03</span><br>
+        标签上印 <span class="mono">PV-L-A-02-03</span>，扫码即可定位。<br>
+        <span class="mono">TEMP</span> 保留为删除库位时的临时暂存库位。
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/locations.js?v={{ static_version }}"></script>
+{% endblock %}

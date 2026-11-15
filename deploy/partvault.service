@@ -1,0 +1,20 @@
+[Unit]
+Description=PartVault 元件库管家
+After=network.target
+
+[Service]
+Type=simple
+User=luoyu
+Group=luoyu
+WorkingDirectory=/home/luoyu/partvault
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SUPVAN_PRINT_HELPER=/home/luoyu/partvault/tools/supvan_print/supvan-print-helper
+ExecStart=/home/luoyu/partvault/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8765 --workers 1 --proxy-headers
+Restart=always
+RestartSec=3
+StandardOutput=append:/home/luoyu/partvault/data/service.log
+StandardError=append:/home/luoyu/partvault/data/service.err.log
+
+[Install]
+WantedBy=multi-user.target

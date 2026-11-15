@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}BOM 核对 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>BOM 核对</h1>
+    <p class="sub">导入 BOM，自动匹配库存，缺料一眼看出来，匹配齐了可一键批量出库</p>
+  </div>
+</div>
+
+<div class="grid-side">
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('bom') }}BOM 项目</h2><span class="badge">{{ projects|length }} 个</span></div>
+      {% if projects %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>项目</th><th class="num">行数</th><th>创建时间</th><th class="right">操作</th></tr></thead>
+          <tbody>
+          {% for p in projects %}
+            <tr>
+              <td><a class="model" href="/bom/{{ p.id }}">{{ p.name }}</a>{% if p.note %}<div class="sub">{{ p.note }}</div>{% endif %}</td>
+              <td class="num">{{ counts.get(p.id, 0) }}</td>
+              <td class="small muted">{{ p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else '' }}</td>
+              <td class="right">
+                <a class="btn sm" href="/bom/{{ p.id }}">{{ icon('chevron-right') }}打开</a>
+                <form method="post" action="/bom/{{ p.id }}/delete" data-confirm="删除 BOM「{{ p.name }}」？" style="display:inline">
+                  <button class="btn sm danger" type="submit">{{ icon('trash') }}删除</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty"><div class="big">{{ icon('bom') }}</div>还没有 BOM，右侧上传一个</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('upload') }}导入 BOM</h2><span class="badge">.xlsx / .csv</span></div>
+      <form method="post" action="/bom/upload" enctype="multipart/form-data">
+        <div class="form-grid" style="grid-template-columns:1fr; gap:12px">
+          <div class="field">
+            <label>项目名称</label>
+            <input type="text" name="name" placeholder="如 太阳能灯主板 V1.2">
+          </div>
+          <div class="field">
+            <label>BOM 文件 <span class="req">*</span></label>
+            <input type="file" name="file" accept=".xlsx,.xls,.csv" required>
+          </div>
+        </div>
+        <div class="form-actions"><button class="btn primary" type="submit">{{ icon('upload') }}上传并匹配库存</button></div>
+      </form>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('file') }}支持的列</h2></div>
+      <div class="small muted" style="line-height:1.9">
+        嘉立创 BOM：<span class="mono">Comment / Designator / Footprint / Quantity / Supplier Part</span><br>
+        通用 BOM：型号、位号、封装、数量、料号。<br>
+        匹配顺序：先按供应商料号，再按型号（精确 → 模糊）。<br>
+        导入后仍显示「未匹配」的行，可以在 BOM 明细右侧手动指定物料。
+      </div>
+    </div>
+
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('stock') }}批量出库</h2></div>
+      <p class="small muted">打开 BOM 后点「按 BOM 出库」，只对库存足够的行出库；不足的会跳过并提示。出库记录会写到库存流水。</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

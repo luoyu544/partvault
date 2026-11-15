@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ loc.code }} · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small muted"><a href="/locations">库位</a> / {{ path }}</p>
+    <h1>{{ loc.code }} · {{ loc.name }}</h1>
+    <p class="sub">{{ parts|length }} 种物料，共 {{ '%g'|format(parts|sum(attribute='_qty')) }} 件 · {{ loc.kind }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/locations">{{ icon('chevron-left') }}返回库位树</a>
+    <a class="btn" href="/locations/{{ loc.id }}/edit">{{ icon('edit') }}修改属性</a>
+    <a class="btn" href="/location-labels?ids={{ loc.id }}">{{ icon('tag') }}打印库位标签</a>
+    {% if loc.code|lower == temp_location_code|lower %}
+    <span class="badge warn">临时库位，不能删除</span>
+    {% else %}
+    <form method="post" action="/locations/{{ loc.id }}/delete" data-confirm="确定删除库位 {{ loc.code }}？有库存的物料会先移到 {{ temp_location_code }} 临时库位，删除后不可恢复。">
+      <button class="btn danger" type="submit">{{ icon('trash') }}删除库位</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-side">
+  <div class="card">
+    <div class="card-head"><h2>{{ icon('parts') }}库位物料</h2></div>
+    {% if parts %}
+    <form method="post" action="/locations/{{ loc.id }}/move"
+          data-require-checked="parts" data-check-message="请先勾选要移库的物料">
+      <div class="bulk-toolbar">
+        <label class="check-inline"><input type="checkbox" data-check-all="parts"> 全选</label>
+        <span class="bulk-arrow">{{ icon('arrow-right') }}</span>
+        <select name="to_location_id" required aria-label="目标库位">
+          <option value="">移到库位…</option>
+          {% for l in locations %}
+          {% if l.id != loc.id %}
+          <option value="{{ l.id }}">{{ '　' * l.depth }}{% if l.code|lower == temp_location_code|lower %}[临时] {% endif %}{{ l.code }} · {{ l.name }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+        <button class="btn primary" type="submit">{{ icon('arrow-right') }}批量移库</button>
+        <span class="help" data-check-count="parts">已选 0 个</span>
+      </div>
+      <p class="help">勾选物料后，会把它们在本库位的全部在库批次移到目标库位；批次、日期码和单价保留。</p>
+      <div class="table-wrap">
+        <table class="table mobile-cards has-check">
+          <thead><tr><th class="check-col"><input type="checkbox" data-check-all="parts" aria-label="全选物料"></th><th>型号</th><th>名称</th><th>封装</th><th class="num">在本库位</th><th class="right">操作</th></tr></thead>
+          <tbody>
+          {% for p in parts %}
+            <tr>
+              <td class="check-col"><input type="checkbox" name="part_ids" value="{{ p.id }}" data-check-item="parts" aria-label="选择物料 {{ p.model }}"></td>
+              <td class="mc-main"><a class="model" href="/parts/{{ p.id }}">{{ p.model }}</a></td>
+              <td class="small" data-label="名称">{{ p.name or '—' }}</td>
+              <td class="small" data-label="封装">{{ p.package or '—' }}</td>
+              <td class="num" data-label="在本库位"><span class="badge ok">{{ '%g'|format(p._qty) }}</span></td>
+              <td class="right mc-actions"><a class="btn sm" href="/parts/{{ p.id }}">{{ icon('chevron-right') }}详情</a></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+    {% else %}
+    <div class="empty"><div class="big">{{ icon('location') }}</div>这个库位还没有物料<div class="mt"><a class="btn" href="/parts/new">{{ icon('plus') }}新增物料</a></div></div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-head"><h2>{{ icon('qr') }}库位码</h2></div>
+      <div class="row">
+        <img src="/qr.png?data={{ ('PV-L-' ~ loc.code)|urlencode }}" alt="QR" style="width:112px;height:112px;border:1px solid var(--line);border-radius:8px">
+        <div>
+          <div class="mono small">PV-L-{{ loc.code }}</div>
+          <div class="help mt">打印出来贴在柜子/盒子上。手机扫码或扫码枪输入后可在物料搜索框查询。</div>
+        </div>
+      </div>
+    </div>
+    <div class="card mt-l">
+      <div class="card-head"><h2>{{ icon('file') }}信息</h2></div>
+      <div class="kv">
+        <div class="k">编码</div><div class="mono">{{ loc.code }}</div>
+        <div class="k">名称</div><div>{{ loc.name }}</div>
+        <div class="k">类型</div><div>{{ loc.kind }}</div>
+        <div class="k">完整路径</div><div>{{ path }}</div>
+        <div class="k">备注</div><div style="white-space:pre-wrap">{{ loc.note or '—' }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

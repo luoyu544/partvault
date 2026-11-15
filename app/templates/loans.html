@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}借出/未归还 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>借出 / 未归还</h1>
+    <p class="sub">借出会减少库存并标记未归还；归还后自动回库存并关闭记录</p>
+  </div>
+  <div class="actions">
+    <a class="btn primary" href="/stock/scan?mode=borrow">{{ icon('loan') }}扫码借出</a>
+    <a class="btn" href="/stock/scan?mode=return">{{ icon('scan') }}扫码归还</a>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="stat">
+    <div class="label">未归还记录</div>
+    <div class="value {{ 'danger' if open_count else '' }}">{{ open_count }}</div>
+    <div class="hint">按借出批次统计</div>
+  </div>
+  <div class="stat">
+    <div class="label">未归还数量</div>
+    <div class="value {{ 'danger' if open_qty else '' }}">{{ '%g'|format(open_qty) }}</div>
+    <div class="hint">尚未归还的物品总数</div>
+  </div>
+  <div class="stat">
+    <div class="label">当前筛选</div>
+    <div class="value" style="font-size:20px; margin-top:6px">
+      {% if status == 'open' %}未归还{% elif status == 'returned' %}已归还{% else %}全部{% endif %}
+    </div>
+    <div class="hint">{{ loans|length }} 条记录</div>
+  </div>
+  <div class="stat">
+    <div class="label">处理方式</div>
+    <div class="value" style="font-size:18px; margin-top:8px">扫码归还</div>
+    <div class="hint">先扫物品签，再扫库位签</div>
+  </div>
+</div>
+
+<form class="filters" action="/loans" method="get">
+  <input class="grow" type="text" name="q" value="{{ q }}" placeholder="型号 / 名称 / 编号 / 借用人">
+  <select name="status">
+    <option value="open" {{ 'selected' if status == 'open' }}>未归还</option>
+    <option value="returned" {{ 'selected' if status == 'returned' }}>已归还</option>
+    <option value="all" {{ 'selected' if status == 'all' }}>全部</option>
+  </select>
+  <button class="btn primary" type="submit">{{ icon('filter') }}筛选</button>
+  <a class="btn" href="/loans">{{ icon('refresh') }}重置</a>
+</form>
+
+{% if loans %}
+<div class="card" style="padding:0">
+  <div class="table-wrap">
+    <table class="table mobile-cards loan-table">
+      <thead>
+        <tr>
+          <th>状态</th>
+          <th>物料</th>
+          <th class="num">借出</th>
+          <th class="num">已还</th>
+          <th class="num">未还</th>
+          <th>借出库位</th>
+          <th>借用人</th>
+          <th>借出时间</th>
+          <th>归还库位</th>
+          <th class="right">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in loans %}
+        <tr>
+          <td data-label="状态">
+            {% if row.loan.status == 'open' %}<span class="badge danger">未归还</span>
+            {% else %}<span class="badge ok">已归还</span>{% endif %}
+          </td>
+          <td class="mc-main" data-label="">
+            {% if row.part %}
+            <a class="model" href="/parts/{{ row.part.id }}">{{ row.part.model }}</a>
+            <div class="sub">{{ row.part.name or '' }} · <span class="mono">{{ row.part.code }}</span></div>
+            {% else %}<span class="muted">已删除物料</span>{% endif %}
+          </td>
+          <td class="num" data-label="借出">{{ '%g'|format(row.loan.qty) }}</td>
+          <td class="num mc-hide" data-label="已还">{{ '%g'|format(row.loan.returned_qty or 0) }}</td>
+          <td class="num" data-label="未还">{% if row.loan.outstanding_qty %}<span class="badge danger">{{ '%g'|format(row.loan.outstanding_qty) }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+          <td class="small muted" data-label="借出库位">{{ row.out_path or '—' }}</td>
+          <td class="small" data-label="借用人">{{ row.loan.borrower or '—' }}</td>
+          <td class="small muted nowrap" data-label="借出时间">{{ row.loan.created_at.strftime('%Y-%m-%d %H:%M') if row.loan.created_at else '' }}</td>
+          <td class="small muted mc-hide" data-label="归还库位">{{ row.return_path or '—' }}</td>
+          <td class="right nowrap mc-actions" data-label="">
+            {% if row.loan.status == 'open' and row.part %}
+            <a class="btn sm" href="/stock/scan?mode=return&amp;part_id={{ row.part.id }}">{{ icon('scan') }}扫码归还</a>
+            {% else %}
+            <a class="btn sm" href="/stock">{{ icon('file') }}查看流水</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">
+    <div class="big">{{ icon('check') }}</div>
+    {% if q %}没有符合条件的借出记录{% elif status == 'open' %}没有未归还物品{% else %}没有借出记录{% endif %}
+    <div class="mt"><a class="btn primary" href="/stock/scan?mode=borrow">{{ icon('loan') }}去扫码借出</a></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

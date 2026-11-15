@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑物料' if part else '新增物料' }} · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ '编辑物料' if part else '新增物料' }}</h1>
+    <p class="sub">{{ part.code if part else '建立物料档案，后续所有库位、批次和流水都挂在它下面' }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ '/parts/' + part.id|string if part else '/parts' }}">{{ icon('chevron-left') }}取消</a>
+  </div>
+</div>
+
+<form id="partForm" method="post" enctype="multipart/form-data"
+      action="{{ '/parts/' + part.id|string + '/edit' if part else '/parts/new' }}">
+  <input type="hidden" name="lcsc_code" data-lcsc-code value="">
+  <input type="hidden" name="lcsc_mode" data-lcsc-mode-input value="blank">
+  <div class="grid-side">
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>{{ icon('file') }}基本信息</h2></div>
+        <div class="form-grid">
+          <div class="field">
+            <label>型号 <span class="req">*</span></label>
+            <input type="text" name="model" value="{{ part.model if part else '' }}" required placeholder="如 STM32F103C8T6 / M3×8 螺丝">
+          </div>
+          <div class="field">
+            <label>名称 / 规格描述</label>
+            <input type="text" name="name" value="{{ part.name if part else '' }}" placeholder="如 贴片电容 100nF 50V X7R">
+          </div>
+          <div class="field">
+            <label>品牌 / 厂家</label>
+            <input type="text" name="brand" value="{{ part.brand if part else '' }}" placeholder="如 三星 / TI / 无品牌">
+          </div>
+          <div class="field">
+            <label>封装 / 规格</label>
+            <input type="text" name="package" value="{{ part.package if part else '' }}" placeholder="如 0603 / SOT-23-6 / M3">
+          </div>
+          <div class="field">
+            <label>分类</label>
+            <select name="category_id">
+              <option value="">未分类</option>
+              {% for c in categories %}
+              <option value="{{ c.id }}" {{ 'selected' if part and part.category_id == c.id }}>{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>常用库位（可选）</label>
+            <select name="default_location_id">
+              <option value="">不指定（每次扫码选择）</option>
+              {% for l in locations %}
+              <option value="{{ l.id }}" {{ 'selected' if part and part.default_location_id == l.id }}>{{ '　' * l.depth }}{{ l.code }} · {{ l.name }}</option>
+              {% endfor %}
+            </select>
+            <p class="help">库位不锁定物料，仅作默认建议；入库/出库时可扫描任意库位。</p>
+          </div>
+          <div class="field">
+            <label>主供应商</label>
+            <select name="supplier_id">
+              <option value="">未指定</option>
+              {% for s in suppliers %}
+              <option value="{{ s.id }}" {{ 'selected' if part and part.supplier_id == s.id }}>{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>供应商料号</label>
+            <input type="text" name="supplier_part_no" value="{{ part.supplier_part_no if part else '' }}" placeholder="如 C1525">
+          </div>
+          <div class="field">
+            <label>购买链接</label>
+            <input type="url" name="purchase_url" value="{{ part.purchase_url if part else '' }}" placeholder="https://...">
+          </div>
+          <div class="field">
+            <label>数据手册链接</label>
+            <input type="url" name="datasheet_url" value="{{ part.datasheet_url if part else '' }}" placeholder="https://...">
+          </div>
+          <div class="field">
+            <label>单位</label>
+            <input type="text" name="unit" value="{{ part.unit if part else 'PCS' }}" placeholder="PCS / 个 / 米 / 包">
+          </div>
+          <div class="field">
+            <label>安全库存（低于会提醒）</label>
+            <input type="number" step="any" name="min_stock" value="{{ part.min_stock if part else 0 }}">
+          </div>
+          {% if part %}
+          <div class="field">
+            <label>状态</label>
+            <select name="status">
+              <option value="active" {{ 'selected' if part.status == 'active' }}>启用</option>
+              <option value="archived" {{ 'selected' if part.status == 'archived' }}>停用 / 归档</option>
+            </select>
+          </div>
+          {% endif %}
+          <div class="field full" id="attributes">
+            <label>参数（每行一个，键: 值）</label>
+            <textarea name="attributes" placeholder="阻值: 10kΩ&#10;精度: 1%&#10;功率: 1/10W">{{ part.attributes if part else '' }}</textarea>
+          </div>
+          <div class="field full">
+            <label>备注</label>
+            <textarea name="note" placeholder="存放说明、替代料、拆机来源等">{{ part.note if part else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+
+      {% if not part %}
+      <div class="card mt-l">
+        <div class="card-head"><h2>{{ icon('archive') }}初始入库（可选）</h2></div>
+        <div class="form-grid">
+          <div class="field">
+            <label>初始数量</label>
+            <input type="number" step="any" name="initial_qty" placeholder="如 100">
+          </div>
+          <div class="field">
+            <label>批次</label>
+            <input type="text" name="initial_lot" placeholder="如 20261021-A">
+          </div>
+          <div class="field">
+            <label>日期码</label>
+            <input type="text" name="initial_date_code" placeholder="如 2026-10-21">
+          </div>
+          <div class="field">
+            <label>单价（元）</label>
+            <input type="number" step="any" name="initial_price" placeholder="如 0.012">
+          </div>
+          <div class="field">
+            <label class="help">初始入库会放进上面选择的「常用库位」；不填初始数量也可以先建档案，之后扫码入库。</label>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit">{{ icon('check') }}{{ '保存修改' if part else '创建物料' }}</button>
+        <a class="btn" href="{{ '/parts/' + part.id|string if part else '/parts' }}">{{ icon('chevron-left') }}取消</a>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>{{ icon('camera') }}图片</h2></div>
+        {% if part and part.image_path %}
+        <img class="preview-img" src="/uploads/{{ part.image_path }}" alt="物料图片">
+        <p class="help mt">上传新图片会替换旧图。</p>
+        {% else %}
+        <div class="empty" style="padding:18px"><div class="big">{{ icon('camera') }}</div>可上传实物/包装照片</div>
+        {% endif %}
+        <div class="field mt">
+          <input type="file" name="image" accept="image/*">
+        </div>
+      </div>
+
+      <div class="card mt-l lcsc-widget" data-lcsc-widget data-lcsc-mode="fill" data-lcsc-form="#partForm">
+        <div class="card-head">
+          <h2>{{ icon('spark') }}从立创商城查找</h2>
+          <span class="badge gray">联网 · 按需查询</span>
+        </div>
+        <p class="small muted">输入型号、名称、参数或 C 码，找到器件后点「只补空」或「以立创为准」。</p>
+        <div class="lcsc-search-row">
+          <input type="text" data-lcsc-query value="{{ lcsc_query or '' }}" placeholder="型号 / 名称 / C 码">
+          <button type="button" class="btn primary" data-lcsc-search>{{ icon('search') }}搜索</button>
+        </div>
+        <div class="lcsc-filter-row">
+          <input type="text" data-lcsc-package value="{{ lcsc_package or '' }}" placeholder="封装（可选）">
+          <input type="text" data-lcsc-brand value="{{ lcsc_brand or '' }}" placeholder="品牌（可选）">
+          <label class="inline small"><input type="checkbox" data-lcsc-instock checked> 只看有库存</label>
+          <button type="button" class="btn sm" data-lcsc-clear>{{ icon('refresh') }}清空</button>
+        </div>
+        <div class="small muted lcsc-status" data-lcsc-status>搜索结果不会保存；只有选中的资料会写入物料。</div>
+        <div class="lcsc-results" data-lcsc-results></div>
+        <div class="lcsc-selected" data-lcsc-selected hidden></div>
+      </div>
+
+      <div class="card mt-l">
+        <div class="card-head"><h2>{{ icon('spark') }}提示</h2></div>
+        <p class="small muted">型号尽量写完整（含后缀），搜索和 BOM 匹配会更准。</p>
+        <p class="small muted mt">非电子物料（螺丝、开发板、工具）同样可以建，分类选对应项即可。</p>
+        <p class="small muted mt">一个物料可以有多个来源，保存后在详情页添加淘宝/立创链接。</p>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/static/lcsc.js?v={{ static_version }}"></script>
+{% endblock %}

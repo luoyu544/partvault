@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}编辑供应商 · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small muted"><a href="/settings">设置</a> / 供应商</p>
+    <h1>编辑供应商</h1>
+    <p class="sub">{{ supplier.name }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="/settings">{{ icon('chevron-left') }}返回设置</a>
+  </div>
+</div>
+
+<div class="grid-side">
+    <div>
+      <form method="post" action="/settings/supplier/{{ supplier.id }}/edit">
+        <div class="card">
+          <div class="card-head"><h2>{{ icon('users') }}供应商资料</h2></div>
+          <div class="form-grid">
+            <div class="field">
+              <label>名称 <span class="req">*</span></label>
+              <input type="text" name="name" required maxlength="120" value="{{ form.name }}" autocomplete="off">
+            </div>
+            <div class="field">
+              <label>类型</label>
+              <select name="type">
+                {% for kind in types %}
+                <option value="{{ kind }}" {{ 'selected' if form.type == kind else '' }}>{{ type_labels.get(kind, kind) }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field full">
+              <label>主页</label>
+              <input type="url" name="homepage" maxlength="300" value="{{ form.homepage }}" placeholder="https://...">
+            </div>
+            <div class="field full">
+              <label>备注</label>
+              <textarea name="note" placeholder="店铺名、联系人、采购说明等">{{ form.note }}</textarea>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn primary" type="submit">{{ icon('check') }}保存修改</button>
+          <a class="btn" href="/settings">{{ icon('chevron-left') }}取消</a>
+        </div>
+      </form>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head"><h2>{{ icon('layers') }}引用情况</h2></div>
+        <div class="kv">
+          <div class="k">物料主供应商</div><div>{{ usage.parts }} 个</div>
+          <div class="k">供应来源</div><div>{{ usage.sources }} 条</div>
+          <div class="k">库存批次</div><div>{{ usage.lots }} 个</div>
+        </div>
+        <p class="help mt">被物料、来源或批次引用的供应商不能删除，以免历史采购信息丢失。可以先在物料和批次里改用其他供应商。</p>
+      </div>
+
+      <div class="card mt-l">
+        <div class="card-head"><h2>{{ icon('trash') }}删除供应商</h2></div>
+        {% if usage.parts or usage.sources or usage.lots %}
+        <p class="small muted">当前供应商仍被引用，暂时不能删除。</p>
+        <button class="btn danger" type="button" disabled>{{ icon('trash') }}不能删除</button>
+        {% else %}
+        <p class="small muted">删除后不可恢复；该供应商尚未被任何物料或批次引用。</p>
+        <form method="post" action="/settings/supplier/{{ supplier.id }}/delete"
+              data-confirm="确定删除供应商「{{ supplier.name }}」？">
+          <button class="btn danger" type="submit">{{ icon('trash') }}删除供应商</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
