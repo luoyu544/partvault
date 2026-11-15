@@ -165,7 +165,11 @@ async fn print_job(job_path: &str, out_path: &str) -> serde_json::Value {
         }
     }
 
-    let density = Density::uniform(4);
+    let density_value: u8 = std::env::var("SUPVAN_DENSITY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let density = Density::uniform(density_value);
     let copies = if job.copies > 0 { job.copies } else { 1 };
     let mut printed = 0usize;
     let total = job.labels.len() * copies as usize;
@@ -193,17 +197,28 @@ async fn print_job(job_path: &str, out_path: &str) -> serde_json::Value {
                     })
                 }
             };
-            // 50 mm media is rendered 400 px wide, but the T50 head carries
-            // 384 dots (48 mm). Fit the width to the head the way the vendor
-            // SDK does instead of letting center_in_printhead crop 1 mm a side.
-            let img = if img.width() > 384 {
-                img.resize_exact(384, img.height(), image::imageops::FilterType::Nearest)
+            // 50 mm media renders 400 px wide, but the T50 head carries 384
+            // dots (48 mm). Scale the width onto the head, keeping the 30 mm
+            // height — this mirrors the vendor SDK's MaxDotValue = 384.
+            let img = if img.width() != 384 {
+                img.resize_exact(384, img.height(), image::imageops::FilterType::Lanczos3)
             } else {
                 img
             };
             let gray = img.to_luma8();
-            let (w, h) = (gray.width(), gray.height());
-            let buffers = match page::grayscale(gray.as_raw(), w, h, density, DitherMode::Bayer) {
+            // Labels are text, QR and barcodes, not photos: threshold to pure
+            // black/white so thin strokes stay solid instead of dissolving
+            // into halftone speckle. SUPVAN_THRESHOLD tunes the cut-off.
+            let threshold: u8 = std::env::var("SUPVAN_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(150);
+            let mut raw = gray.into_raw();
+            for px in raw.iter_mut() {
+                *px = if *px < threshold { 0 } else { 255 };
+            }
+            let (w, h) = (384u32, (raw.len() / 384) as u32);
+            let buffers = match page::grayscale(&raw, w, h, density, DitherMode::Bayer) {
                 Ok(b) => b,
                 Err(e) => {
                     return serde_json::json!({
@@ -212,7 +227,7 @@ async fn print_job(job_path: &str, out_path: &str) -> serde_json::Value {
                     })
                 }
             };
-            if let Err(e) = printer.print_buffers(&buffers).await {
+            if let Err(e) = printer.print_buffers_at_speed(&buffers, 40).await {
                 return serde_json::json!({
                     "ok": false, "devices": devices, "devicePath": device,
                     "error": format!("打印失败：{e}"),

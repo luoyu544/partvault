@@ -1,0 +1,31 @@
+Add a fixed-speed print entry point to supvan-proto.
+
+The vendor Windows SDK always sets PrintSet.Speed = 40. The upstream library
+picks a speed from the compressed size of each block, which lands on 60 for
+sparse pages; at 60 every dot is heated for less time and thin strokes print
+faint. This mirrors the SDK.
+
+Apply in the supvan-cups checkout (path: crates/supvan-proto/src/printer.rs).
+
+--- a/crates/supvan-proto/src/printer.rs
++++ b/crates/supvan-proto/src/printer.rs
+@@ pub async fn print_buffers(&self, buffers: &[[u8; PRINT_BUF_SIZE]]) -> Result<()> {
+         let page = compress_buffers(buffers, self.transport.flow().packing())?;
+         self.print_compressed(&page).await
+     }
++
++    /// Print buffers at an explicit feed speed.
++    ///
++    /// The vendor Windows SDK sets `PrintSet.Speed = 40` for every job; the
++    /// automatic table in [`crate::speed`] picks 60 for sparse pages, and the
++    /// higher speed burns each dot for less time — thin strokes come out
++    /// faint. Use this to reproduce the SDK's output exactly.
++    pub async fn print_buffers_at_speed(
++        &self,
++        buffers: &[[u8; PRINT_BUF_SIZE]],
++        speed: u16,
++    ) -> Result<()> {
++        let mut page = compress_buffers(buffers, self.transport.flow().packing())?;
++        page.speed = speed;
++        self.print_compressed(&page).await
++    }

@@ -40,7 +40,10 @@ _FONT_DIR = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
 
 
 def _find_fonts() -> tuple[Path, Path]:
-    """Prefer the template's HarmonyOS Sans SC, then Microsoft YaHei."""
+    """Prefer the template's HarmonyOS Sans SC, then Microsoft YaHei.
+
+    On Linux (server deployment) fall back to Noto Sans CJK, then WenQuanYi.
+    """
     candidates = [Path(r"C:\Windows\Fonts\HarmonyOS_Sans_SC_Regular.ttf")]
     for base in (Path(r"C:\Program Files"), Path(r"C:\Program Files (x86)")):
         candidates.extend(base.glob(
@@ -50,6 +53,20 @@ def _find_fonts() -> tuple[Path, Path]:
         bold = regular.with_name("HarmonyOS_Sans_SC_Bold.ttf")
         if regular.is_file() and bold.is_file():
             return regular, bold
+    linux_pairs = [
+        ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
+        ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+         "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"),
+        ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+         "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+        ("/usr/share/fonts/truetype/arphic/uming.ttc",
+         "/usr/share/fonts/truetype/arphic/uming.ttc"),
+    ]
+    for regular_s, bold_s in linux_pairs:
+        regular, bold = Path(regular_s), Path(bold_s)
+        if regular.is_file():
+            return regular, bold if bold.is_file() else regular
     return _FONT_DIR / "msyh.ttc", _FONT_DIR / "msyhbd.ttc"
 
 
@@ -285,8 +302,8 @@ def _draw_barcode(draw: ImageDraw.ImageDraw, data: str, box: dict, scale: int) -
         draw.rectangle((x0, y, x1 - 1, y + box_h - 1), fill=0)
 
 
-def render_png(layout: dict, scale: int = 8) -> bytes:
-    """Render a layout to a monochrome PNG at ``scale`` pixels per millimetre."""
+def _render_image(layout: dict, scale: float) -> Image.Image:
+    """Draw a layout at ``scale`` pixels per millimetre (grayscale, antialiased)."""
     width = int(round(LABEL_W * scale))
     height = int(round(LABEL_H * scale))
     image = Image.new("L", (width, height), 255)
@@ -319,6 +336,23 @@ def render_png(layout: dict, scale: int = 8) -> bytes:
             anchor = "lm"
         draw.text(position, text, font=font, fill=0, anchor=anchor)
 
+    return image
+
+
+def render_png(layout: dict, scale: float = 8) -> bytes:
+    """Render a layout to a grayscale PNG at ``scale`` pixels per millimetre."""
+    image = _render_image(layout, scale)
     out = io.BytesIO()
     image.save(out, format="PNG", optimize=True)
     return out.getvalue()
+
+
+def render_png_for_print(layout: dict, width_px: int = 384) -> bytes:
+    """Render at the print head's native dot width (T50 = 384 dots / 48 mm).
+
+    The layout is 50 mm wide, so drawing at 384 px maps the whole label onto the
+    head exactly the way the vendor SDK's ``MaxDotValue = 384`` does. Drawing at
+    the final size avoids resampling a rendered bitmap afterwards — that
+    resample is what smeared the small text.
+    """
+    return render_png(layout, width_px / float(LABEL_W))
